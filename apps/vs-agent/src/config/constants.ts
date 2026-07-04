@@ -149,7 +149,7 @@ export const VERANA_AUTO_TRIGGER_RESOLVER = process.env.VERANA_AUTO_TRIGGER_RESO
 //   'messaging' — base MessageController + credential/proof handlers (always required)
 //   'chat'      — chat Credo modules + chat message handlers
 //   'mrtd'      — eMRTD Credo module + MRTD message handlers
-//   'openid4vc' — OpenID4VC (OID4VCI issuer, OID4VP verifier, holder) Credo module
+//   'openid4vc', OpenID4VC (OID4VCI issuer, OID4VP verifier, holder) Credo module
 //
 // In production this value is set by the Docker image (VS_AGENT_PLUGINS env in Dockerfile).
 // Only override it in development environments.

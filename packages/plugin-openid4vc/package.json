@@ -29,14 +29,14 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@credo-ts/openid4vc": "0.7.1-pr-2704-20260519192541",
+    "@credo-ts/openid4vc": "0.7.1-pr-2704-20260630143332",
     "@nestjs/common": "^10.0.0",
     "@verana-labs/vs-agent-model": "workspace:*",
     "@verana-labs/vs-agent-sdk": "workspace:*",
     "express": "^5.2.1"
   },
   "peerDependencies": {
-    "@credo-ts/core": "0.7.1-pr-2704-20260519192541"
+    "@credo-ts/core": "0.7.1-pr-2704-20260630143332"
   },
   "devDependencies": {
     "@types/express": "^5.0.6"
