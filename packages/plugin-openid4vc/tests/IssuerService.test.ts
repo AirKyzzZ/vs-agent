@@ -1,0 +1,20 @@
+import { describe, expect, it } from 'vitest'
+
+import { buildSdJwtPayload, DISCLOSURE_FRAME } from '../src/services/IssuerService'
+
+describe('sd-jwt payload construction', () => {
+  it('builds vct, subject id and claims', () => {
+    const payload = buildSdJwtPayload('https://vct.example/unfold-attestation', {
+      organization: 'ACME',
+      role: 'employee',
+    })
+    expect(payload.vct).toBe('https://vct.example/unfold-attestation')
+    expect(payload.organization).toBe('ACME')
+    expect(payload.role).toBe('employee')
+    expect(String(payload.id)).toMatch(/^https:\/\/vct\.example\/subjects\//)
+  })
+
+  it('selectively discloses organization and role only', () => {
+    expect(DISCLOSURE_FRAME).toEqual({ _sd: ['organization', 'role'] })
+  })
+})
