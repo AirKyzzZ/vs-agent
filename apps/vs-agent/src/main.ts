@@ -56,14 +56,21 @@ import {
   DEFAULT_PUBLIC_API_BASE_URL,
   ENABLED_PLUGINS,
   EVENTS_BASE_URL,
+  OID4VC_HOLDER_ENABLED,
+  OID4VC_ISSUER_ENABLED,
+  OID4VC_VERIFIER_ENABLED,
   POSTGRES_HOST,
   PUBLIC_API_BASE_URL,
+  ROGUE_VERIFIER_DID,
+  UNFOLD_VCT,
+  UNFOLD_VTJSC_ID,
   USE_CORS,
   USER_PROFILE_AUTODISCLOSE,
   MASTER_LIST_CSCA_LOCATION,
   AGENT_AUTO_UPDATE_STORAGE_ON_STARTUP,
   VERANA_INDEXER_BASE_URL,
   VERANA_ACCOUNT_MNEMONIC,
+  VERANA_RESOLVER_URL,
   VERANA_RPC_ENDPOINT_URL,
   VERANA_CHAIN_ID,
   VERANA_INDEXER_DEFAULT_HANDLERS_OVERRIDE,
@@ -83,8 +90,15 @@ export const startServers = async (agent: VsAgent, serverConfig: ServerConfig) =
   await adminApp.listen(port)
 
   // PublicModule-specific config
-  const publicApp = await NestFactory.create(PublicModule.register(agent, publicApiBaseUrl))
+  const publicApp = await NestFactory.create(PublicModule.register(agent, publicApiBaseUrl, nestPlugins))
   commonAppConfig(publicApp, cors, true)
+
+  if (ENABLED_PLUGINS.includes('openid4vc')) {
+    const openid4vcModule = await import('@verana-labs/vs-agent-plugin-openid4vc').catch(() => null)
+    if (openid4vcModule) {
+      publicApp.getHttpAdapter().getInstance().use(openid4vcModule.getOpenId4VcExpressApp())
+    }
+  }
 
   // Send environment to UI
   const publicDir = path.join(__dirname, '../../public')
@@ -198,14 +212,16 @@ const run = async () => {
 
   // Dynamically load optional plugin packages.
   const optImport = (name: string): Promise<any> => import(name).catch(() => null)
-  const [chatModule, mrtdModule] = await Promise.all([
+  const [chatModule, mrtdModule, openid4vcModule] = await Promise.all([
     ENABLED_PLUGINS.includes('chat') ? optImport('@verana-labs/vs-agent-plugin-chat') : null,
     ENABLED_PLUGINS.includes('mrtd') ? optImport('@verana-labs/vs-agent-plugin-mrtd') : null,
+    ENABLED_PLUGINS.includes('openid4vc') ? optImport('@verana-labs/vs-agent-plugin-openid4vc') : null,
   ])
 
   if (
     (ENABLED_PLUGINS.includes('chat') && !chatModule) ||
-    (ENABLED_PLUGINS.includes('mrtd') && !mrtdModule)
+    (ENABLED_PLUGINS.includes('mrtd') && !mrtdModule) ||
+    (ENABLED_PLUGINS.includes('openid4vc') && !openid4vcModule)
   ) {
     serverLogger.warn('Some enabled plugins could not be loaded. Check installation.')
   }
@@ -219,6 +235,20 @@ const run = async () => {
     ...(ENABLED_PLUGINS.includes('messaging') ? [MessagingPlugin] : []),
     ...(chatModule ? [chatModule.ChatPlugin] : []),
     ...(mrtdModule ? [mrtdModule.MrtdPlugin({ masterListCscaLocation: MASTER_LIST_CSCA_LOCATION })] : []),
+    ...(openid4vcModule
+      ? [
+          openid4vcModule.OpenId4VcPlugin({
+            publicApiBaseUrl,
+            issuerEnabled: OID4VC_ISSUER_ENABLED,
+            verifierEnabled: OID4VC_VERIFIER_ENABLED,
+            holderEnabled: OID4VC_HOLDER_ENABLED,
+            resolverUrl: VERANA_RESOLVER_URL,
+            vct: UNFOLD_VCT,
+            vtjscId: UNFOLD_VTJSC_ID,
+            rogueVerifierDid: ROGUE_VERIFIER_DID,
+          }),
+        ]
+      : []),
     VtFlowNestPlugin,
   ]
 

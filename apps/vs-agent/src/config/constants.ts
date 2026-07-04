@@ -149,6 +149,7 @@ export const VERANA_AUTO_TRIGGER_RESOLVER = process.env.VERANA_AUTO_TRIGGER_RESO
 //   'messaging' — base MessageController + credential/proof handlers (always required)
 //   'chat'      — chat Credo modules + chat message handlers
 //   'mrtd'      — eMRTD Credo module + MRTD message handlers
+//   'openid4vc' — OpenID4VC (OID4VCI issuer, OID4VP verifier, holder) Credo module
 //
 // In production this value is set by the Docker image (VS_AGENT_PLUGINS env in Dockerfile).
 // Only override it in development environments.
@@ -158,3 +159,15 @@ export const ENABLED_PLUGINS: string[] = (process.env.VS_AGENT_PLUGINS ?? 'messa
   .filter(Boolean)
 
 if (!ENABLED_PLUGINS.includes('messaging')) ENABLED_PLUGINS.unshift('messaging')
+
+export const OID4VC_ISSUER_ENABLED = process.env.OID4VC_ISSUER_ENABLED === 'true'
+export const OID4VC_VERIFIER_ENABLED = process.env.OID4VC_VERIFIER_ENABLED === 'true'
+export const OID4VC_HOLDER_ENABLED = process.env.OID4VC_HOLDER_ENABLED === 'true'
+export const VERANA_RESOLVER_URL =
+  process.env.VERANA_RESOLVER_URL ?? 'https://resolver.testnet.verana.network/v1/trust'
+export const UNFOLD_VCT =
+  process.env.UNFOLD_VCT ?? 'https://unfold-org.77.42.86.24.sslip.io/vct/unfold-attestation'
+export const UNFOLD_VTJSC_ID =
+  process.env.UNFOLD_VTJSC_ID ??
+  'https://unfold-org.77.42.86.24.sslip.io/vt/schemas-unfold-attestation-jsc.json'
+export const ROGUE_VERIFIER_DID = process.env.ROGUE_VERIFIER_DID ?? 'did:web:rogue-verifier.example'

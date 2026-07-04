@@ -22,6 +22,7 @@ export interface VsAgentNestPlugin {
   name: string
   credoPlugin?: Plugin
   controllers?: (new (...args: any[]) => any)[]
+  publicControllers?: (new (...args: any[]) => any)[]
   providers?: any[]
   messageHandlers?: (new (...args: any[]) => MessageHandler)[]
   imports?: any[]

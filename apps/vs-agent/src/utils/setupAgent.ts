@@ -21,8 +21,15 @@ import {
   AGENT_DIDCOMM_VERSIONS,
   ENABLE_PUBLIC_API_SWAGGER,
   ENABLED_PLUGINS,
+  OID4VC_HOLDER_ENABLED,
+  OID4VC_ISSUER_ENABLED,
+  OID4VC_VERIFIER_ENABLED,
+  ROGUE_VERIFIER_DID,
+  UNFOLD_VCT,
+  UNFOLD_VTJSC_ID,
   VERANA_CHAIN_ID,
   VERANA_INDEXER_BASE_URL,
+  VERANA_RESOLVER_URL,
 } from '../config'
 import { MessageService } from '../controllers/admin/message/MessageService'
 
@@ -81,12 +88,15 @@ export const setupAgent = async ({
   const didcommVersions = AGENT_DIDCOMM_VERSIONS as DidCommVersion[]
 
   const optImport = (name: string): Promise<any> => import(name).catch(() => null)
-  const [chatSetup, mrtdSetup] = await Promise.all([
+  const [chatSetup, mrtdSetup, openid4vcSetup] = await Promise.all([
     ENABLED_PLUGINS.includes('chat')
       ? optImport('@verana-labs/vs-agent-plugin-chat').catch(() => null)
       : null,
     ENABLED_PLUGINS.includes('mrtd')
       ? optImport('@verana-labs/vs-agent-plugin-mrtd').catch(() => null)
+      : null,
+    ENABLED_PLUGINS.includes('openid4vc')
+      ? optImport('@verana-labs/vs-agent-plugin-openid4vc').catch(() => null)
       : null,
   ])
 
@@ -116,6 +126,20 @@ export const setupAgent = async ({
       }),
       ...(chatSetup ? [chatSetup.setupChatProtocols()] : []),
       ...(mrtdSetup ? [mrtdSetup.setupMrtdProtocol({ masterListCscaLocation })] : []),
+      ...(openid4vcSetup
+        ? [
+            openid4vcSetup.setupOpenId4Vc({
+              publicApiBaseUrl,
+              issuerEnabled: OID4VC_ISSUER_ENABLED,
+              verifierEnabled: OID4VC_VERIFIER_ENABLED,
+              holderEnabled: OID4VC_HOLDER_ENABLED,
+              resolverUrl: VERANA_RESOLVER_URL,
+              vct: UNFOLD_VCT,
+              vtjscId: UNFOLD_VTJSC_ID,
+              rogueVerifierDid: ROGUE_VERIFIER_DID,
+            }),
+          ]
+        : []),
     ],
     config: {
       logger,

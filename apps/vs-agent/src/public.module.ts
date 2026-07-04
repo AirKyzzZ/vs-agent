@@ -1,5 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common'
-import { VsAgent } from '@verana-labs/vs-agent-sdk'
+import { VsAgent, VsAgentNestPlugin } from '@verana-labs/vs-agent-sdk'
 
 import {
   CredentialTypesService,
@@ -13,12 +13,21 @@ import { VsAgentService } from './services/VsAgentService'
 
 @Module({})
 export class PublicModule {
-  static register(agent: VsAgent, publicApiBaseUrl: string): DynamicModule {
+  static register(
+    agent: VsAgent,
+    publicApiBaseUrl: string,
+    nestPlugins: VsAgentNestPlugin[] = [],
+  ): DynamicModule {
     const agentRef = { get: () => agent, toJSON: () => 'VsAgent' }
     return {
       module: PublicModule,
       imports: [],
-      controllers: [InvitationRoutesController, SelfTrController, DidWebController],
+      controllers: [
+        InvitationRoutesController,
+        SelfTrController,
+        DidWebController,
+        ...nestPlugins.flatMap(p => p.publicControllers ?? []),
+      ],
       providers: [
         {
           provide: 'VSAGENT',
@@ -32,6 +41,11 @@ export class PublicModule {
         TrustService,
         UrlShorteningService,
         CredentialTypesService,
+        // Only plugins contributing public controllers bring their providers here.
+        // Providers from admin-only plugins (e.g. messaging's MESSAGE_HANDLERS-dependent
+        // MessageService) must not leak into this module, since their required tokens
+        // are only registered in VsAgentModule (the admin module).
+        ...nestPlugins.filter(p => (p.publicControllers?.length ?? 0) > 0).flatMap(p => p.providers ?? []),
       ],
       exports: [],
     }
