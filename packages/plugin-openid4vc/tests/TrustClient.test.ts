@@ -42,4 +42,17 @@ describe('TrustClient', () => {
     expect(evidence.queries[0]).toBe(`${RESOLVER}/resolve?did=${encodeURIComponent(DID)}`)
     expect(evidence.queries[1]).toBe(`${RESOLVER}/verifier-authorization?did=${encodeURIComponent(DID)}&vtjscId=${encodeURIComponent('https://jsc')}`)
   })
+  it('treats malformed JSON bodies as unreachable/unknown', async () => {
+    const badJson = vi.fn(async () => new Response('not-json{', { status: 200 })) as unknown as typeof fetch
+    expect(await new TrustClient(RESOLVER, badJson).resolve(DID)).toEqual({ status: 'unreachable' })
+    expect(await new TrustClient(RESOLVER, badJson).checkAuthorization('verifier', DID, 'https://jsc')).toBe(null)
+  })
+  it('never authorizes on non-boolean authorized values', async () => {
+    expect(await new TrustClient(RESOLVER, fetchReturning(200, { authorized: 'true' })).checkAuthorization('verifier', DID, 'https://jsc')).toBe(false)
+    expect(await new TrustClient(RESOLVER, fetchReturning(200, { authorized: 1 })).checkAuthorization('verifier', DID, 'https://jsc')).toBe(false)
+  })
+  it('treats off-spec trustStatus as untrusted in the verdict', async () => {
+    const { verdict } = await new TrustClient(RESOLVER, fetchReturning(200, { trustStatus: 'FOO', authorized: true })).verdictFor('verifier', DID, 'https://jsc')
+    expect(verdict).toBe('UNTRUSTED')
+  })
 })
