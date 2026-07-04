@@ -3,7 +3,7 @@ import type { OpenId4VcPluginOptions } from '../types'
 import type { SdJwtVcRecord } from '@credo-ts/core'
 import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
-import { X509Certificate } from '@credo-ts/core'
+import { Kms, X509Certificate } from '@credo-ts/core'
 
 import { TrustClient } from '../trust/TrustClient'
 
@@ -56,7 +56,9 @@ export class WalletService {
       dpop: token.dpop,
       credentialBindingResolver: async () => {
         const key = await this.agent.kms.createKey({ type: { kty: 'EC', crv: 'P-256' } })
-        return { method: 'jwk' as const, keys: [key.publicJwk] }
+        const publicJwk = Kms.PublicJwk.fromPublicJwk(key.publicJwk)
+        publicJwk.keyId = key.keyId
+        return { method: 'jwk' as const, keys: [publicJwk] }
       },
     })
     const record = credentials[0].record as SdJwtVcRecord

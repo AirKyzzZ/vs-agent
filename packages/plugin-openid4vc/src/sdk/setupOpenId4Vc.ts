@@ -17,9 +17,12 @@ export interface OpenId4VcSdkPlugin {
   modules: { openId4Vc: OpenId4VcModule; x509?: X509Module }
 }
 
-export function setupOpenId4Vc(options: OpenId4VcPluginOptions): OpenId4VcSdkPlugin {
+export function setupOpenId4Vc(
+  options: OpenId4VcPluginOptions,
+  app: Express = getOpenId4VcExpressApp(),
+): OpenId4VcSdkPlugin {
   const config: OpenId4VcModuleConfigOptions = {
-    app: getOpenId4VcExpressApp(),
+    app,
   }
 
   if (options.issuerEnabled) {
