@@ -1,5 +1,6 @@
 import type { OpenId4VcPluginOptions } from '../types'
 
+import { X509Module } from '@credo-ts/core'
 import { OpenId4VcModule, type OpenId4VcModuleConfigOptions } from '@credo-ts/openid4vc'
 import express, { type Express } from 'express'
 
@@ -13,7 +14,7 @@ export function getOpenId4VcExpressApp(): Express {
 }
 
 export interface OpenId4VcSdkPlugin {
-  modules: { openId4Vc: OpenId4VcModule }
+  modules: { openId4Vc: OpenId4VcModule; x509?: X509Module }
 }
 
 export function setupOpenId4Vc(options: OpenId4VcPluginOptions): OpenId4VcSdkPlugin {
@@ -35,6 +36,17 @@ export function setupOpenId4Vc(options: OpenId4VcPluginOptions): OpenId4VcSdkPlu
   return {
     modules: {
       openId4Vc: new OpenId4VcModule(config),
+      ...(options.holderEnabled
+        ? {
+            x509: new X509Module({
+              getTrustedCertificatesForVerification: (_agentContext, { certificateChain, verification }) =>
+                verification.type === 'oauth2SecuredAuthorizationRequest' ||
+                verification.type === 'credential'
+                  ? certificateChain.map(certificate => certificate.toString('base64'))
+                  : undefined,
+            }),
+          }
+        : {}),
     },
   }
 }
