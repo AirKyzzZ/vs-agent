@@ -36,7 +36,7 @@ export function setupOpenId4Vc(options: OpenId4VcPluginOptions): OpenId4VcSdkPlu
   return {
     modules: {
       openId4Vc: new OpenId4VcModule(config),
-      ...(options.holderEnabled
+      ...(options.holderEnabled || options.verifierEnabled
         ? {
             x509: new X509Module({
               getTrustedCertificatesForVerification: (_agentContext, { certificateChain, verification }) =>

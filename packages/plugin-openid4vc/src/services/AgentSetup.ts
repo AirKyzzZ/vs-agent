@@ -7,6 +7,10 @@ export interface CertificateHandle {
   keyId: string
 }
 
+export function didFromCertificateSan(certificate: X509Certificate | undefined): string | null {
+  return certificate?.sanUriNames.find(uri => uri.startsWith('did:')) ?? null
+}
+
 export async function ensureP256CertificateWithDidSan(
   agent: VsAgent,
   options: { genericRecordId: string; commonName: string; sanUri: string; sanDns: string },

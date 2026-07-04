@@ -7,6 +7,7 @@ import { X509Certificate } from '@credo-ts/core'
 
 import { TrustClient } from '../trust/TrustClient'
 
+import { didFromCertificateSan } from './AgentSetup'
 import { GateStore } from './GateStore'
 
 export class GateBlockedError extends Error {
@@ -114,7 +115,9 @@ export class WalletService {
       dcql: { credentials },
     })
     if (!result.ok) {
-      throw new ShareSubmissionError(`presentation submission failed with status ${result.serverResponse?.status}`)
+      throw new ShareSubmissionError(
+        `presentation submission failed with status ${result.serverResponse?.status}`,
+      )
     }
     return { shared: true as const, status: result.serverResponse?.status ?? 200 }
   }
@@ -125,8 +128,7 @@ export class WalletService {
       | undefined
     if (signer?.method !== 'x5c' || !signer.x5c?.length) return null
     try {
-      const leaf = X509Certificate.fromEncodedCertificate(signer.x5c[0])
-      return leaf.sanUriNames.find(uri => uri.startsWith('did:')) ?? null
+      return didFromCertificateSan(X509Certificate.fromEncodedCertificate(signer.x5c[0]))
     } catch {
       return null
     }
