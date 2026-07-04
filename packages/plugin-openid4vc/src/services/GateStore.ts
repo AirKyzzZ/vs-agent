@@ -25,4 +25,10 @@ export class GateStore {
   public get(id: string): GateEntry | undefined {
     return this.entries.get(id)
   }
+
+  public consume(id: string): GateEntry | undefined {
+    const entry = this.entries.get(id)
+    if (entry) this.entries.delete(id)
+    return entry
+  }
 }

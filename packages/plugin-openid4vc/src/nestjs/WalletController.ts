@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
@@ -9,7 +10,7 @@ import {
   Post,
 } from '@nestjs/common'
 
-import { GateBlockedError, WalletService } from '../services/WalletService'
+import { GateBlockedError, ShareSubmissionError, WalletService } from '../services/WalletService'
 
 const MAX_URI_LENGTH = 10000
 
@@ -63,6 +64,9 @@ export class WalletController {
     } catch (error) {
       if (error instanceof GateBlockedError) {
         throw new ForbiddenException({ shared: false, verdict: error.verdict, reason: error.reason })
+      }
+      if (error instanceof ShareSubmissionError) {
+        throw new BadGatewayException({ shared: false, reason: error.message })
       }
       throw error
     }

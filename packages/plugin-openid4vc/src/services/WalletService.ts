@@ -18,6 +18,21 @@ export class GateBlockedError extends Error {
   }
 }
 
+export class ShareSubmissionError extends Error {}
+
+export function evaluateRequestedVcts(
+  credentials: unknown[],
+  expectedVct: string,
+): { requestedVct: string | null; allMatch: boolean } {
+  if (credentials.length === 0) return { requestedVct: null, allMatch: false }
+  const vcts = credentials.map(credential => {
+    const meta = (credential as { meta?: { vct_values?: unknown } })?.meta
+    const values = Array.isArray(meta?.vct_values) ? meta.vct_values : []
+    return values.length === 1 && typeof values[0] === 'string' ? values[0] : null
+  })
+  return { requestedVct: vcts[0], allMatch: vcts.every(vct => vct === expectedVct) }
+}
+
 export class WalletService {
   private readonly gates = new GateStore()
   private readonly trustClient: TrustClient
@@ -62,8 +77,9 @@ export class WalletService {
     const holder = this.holderApi()
     const resolved = await holder.resolveOpenId4VpAuthorizationRequest(authorizationRequest)
     const verifierDid = this.extractVerifierDid(resolved)
-    const requestedVct = this.extractRequestedVct(resolved)
-    const vtjscId = requestedVct === this.options.vct ? this.options.vtjscId : null
+    const credentials = resolved.authorizationRequestPayload.dcql_query?.credentials ?? []
+    const { requestedVct, allMatch } = evaluateRequestedVcts(credentials, this.options.vct)
+    const vtjscId = allMatch ? this.options.vtjscId : null
     const trust: TrustVerdict = await this.trustClient.verdictFor('verifier', verifierDid, vtjscId)
     const gateId = this.gates.create({ ...trust, resolved })
     return {
@@ -89,6 +105,7 @@ export class WalletService {
         'verifier is not a TRUSTED, authorized VERIFIER participant on the Verana registry',
       )
     }
+    this.gates.consume(gateId)
     const holder = this.holderApi()
     if (!gate.resolved.dcql) throw new Error('resolved authorization request did not contain a dcql query')
     const credentials = holder.selectCredentialsForDcqlRequest(gate.resolved.dcql.queryResult)
@@ -97,7 +114,7 @@ export class WalletService {
       dcql: { credentials },
     })
     if (!result.ok) {
-      throw new Error(`presentation submission failed with status ${result.serverResponse?.status}`)
+      throw new ShareSubmissionError(`presentation submission failed with status ${result.serverResponse?.status}`)
     }
     return { shared: true as const, status: result.serverResponse?.status ?? 200 }
   }
@@ -113,17 +130,6 @@ export class WalletService {
     } catch {
       return null
     }
-  }
-
-  private extractRequestedVct(resolved: {
-    authorizationRequestPayload: { dcql_query?: { credentials?: unknown[] } }
-  }): string | null {
-    const credentials = resolved.authorizationRequestPayload.dcql_query?.credentials ?? []
-    for (const credential of credentials) {
-      const vcts = (credential as { meta?: { vct_values?: unknown } })?.meta?.vct_values
-      if (Array.isArray(vcts) && vcts.length > 0 && typeof vcts[0] === 'string') return vcts[0]
-    }
-    return null
   }
 
   private extractRequestedClaims(resolved: {

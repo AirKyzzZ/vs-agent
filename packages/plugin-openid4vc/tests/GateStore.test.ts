@@ -18,4 +18,10 @@ describe('GateStore', () => {
     store.create({ verdict: 'UNTRUSTED' } as any)
     expect(store.get(first)).toBeUndefined()
   })
+  it('consume returns the entry once and removes it', () => {
+    const store = new GateStore()
+    const id = store.create({ verdict: 'TRUSTED_AUTHORIZED' } as any)
+    expect(store.consume(id)?.verdict).toBe('TRUSTED_AUTHORIZED')
+    expect(store.get(id)).toBeUndefined()
+  })
 })
