@@ -11,6 +11,19 @@ export const ISSUER_ID = 'unfold'
 export const CREDENTIAL_CONFIGURATION_ID = 'unfold-attestation'
 export const DISCLOSURE_FRAME = { _sd: ['organization', 'role'] }
 
+export function parseOfferClaims(body: unknown): { organization: string; role: string } {
+  const candidate = body as { organization?: unknown; role?: unknown } | null | undefined
+  const organization = candidate?.organization
+  const role = candidate?.role
+  if (typeof organization !== 'string' || !organization.trim() || organization.length > 200) {
+    throw new Error('organization must be a non-empty string of at most 200 characters')
+  }
+  if (typeof role !== 'string' || !role.trim() || role.length > 200) {
+    throw new Error('role must be a non-empty string of at most 200 characters')
+  }
+  return { organization, role }
+}
+
 export function buildSdJwtPayload(vct: string, claims: { organization: string; role: string }) {
   const origin = new URL(vct).origin
   return {
@@ -51,15 +64,14 @@ export function buildCredentialRequestToCredentialMapper(
 }
 
 export class IssuerService {
-  private initialized = false
+  private initPromise?: Promise<void>
 
   public constructor(
     private readonly agent: VsAgent,
     private readonly options: OpenId4VcPluginOptions,
   ) {}
 
-  public async ensureInitialized(): Promise<void> {
-    if (this.initialized) return
+  private async initialize(): Promise<void> {
     const host = new URL(this.options.publicApiBaseUrl).hostname
     issuerCertificate = await ensureP256CertificateWithDidSan(this.agent, {
       genericRecordId: 'oid4vc-issuer-certificate',
@@ -85,7 +97,14 @@ export class IssuerService {
       })
     }
     await this.publishSigningKeyInDidDocument(issuerCertificate)
-    this.initialized = true
+  }
+
+  public ensureInitialized(): Promise<void> {
+    this.initPromise ??= this.initialize().catch(error => {
+      this.initPromise = undefined
+      throw error
+    })
+    return this.initPromise
   }
 
   public async createOffer(claims: { organization: string; role: string }) {

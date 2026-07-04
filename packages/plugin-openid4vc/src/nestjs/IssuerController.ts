@@ -1,16 +1,20 @@
 import { BadRequestException, Body, Controller, Get, Inject, Param, Post } from '@nestjs/common'
 
-import { IssuerService } from '../services/IssuerService'
+import { parseOfferClaims, IssuerService } from '../services/IssuerService'
 
 @Controller('oid4vc-demo/offers')
 export class IssuerController {
   public constructor(@Inject(IssuerService) private readonly issuerService: IssuerService) {}
 
   @Post()
-  public async createOffer(@Body() body: { organization?: string; role?: string }) {
-    if (!body?.organization || !body?.role)
-      throw new BadRequestException('organization and role are required')
-    return await this.issuerService.createOffer({ organization: body.organization, role: body.role })
+  public async createOffer(@Body() body: unknown) {
+    let claims: { organization: string; role: string }
+    try {
+      claims = parseOfferClaims(body)
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'invalid claims')
+    }
+    return await this.issuerService.createOffer(claims)
   }
 
   @Get(':id')
