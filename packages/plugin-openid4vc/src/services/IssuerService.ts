@@ -10,6 +10,9 @@ import { ensureP256CertificateWithDidSan } from './AgentSetup'
 export const ISSUER_ID = 'unfold'
 export const CREDENTIAL_CONFIGURATION_ID = 'unfold-attestation'
 export const DISCLOSURE_FRAME = { _sd: ['organization', 'role'] }
+export const CREDENTIAL_CONFIGURATION_DISPLAY = [
+  { name: 'Unfold Attestation', locale: 'en', background_color: '#763EF0', text_color: '#FFFFFF' },
+]
 
 export function parseOfferClaims(body: unknown): { organization: string; role: string } {
   const candidate = body as { organization?: unknown; role?: unknown } | null | undefined
@@ -92,6 +95,19 @@ export class IssuerService {
             cryptographic_binding_methods_supported: ['jwk'],
             credential_signing_alg_values_supported: ['ES256'],
             proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256'] } },
+            display: CREDENTIAL_CONFIGURATION_DISPLAY,
+          },
+        },
+      })
+    } else {
+      await issuerApi.updateIssuerMetadata({
+        issuerId: ISSUER_ID,
+        display: existing.display,
+        credentialConfigurationsSupported: {
+          ...existing.credentialConfigurationsSupported,
+          [CREDENTIAL_CONFIGURATION_ID]: {
+            ...existing.credentialConfigurationsSupported[CREDENTIAL_CONFIGURATION_ID],
+            display: CREDENTIAL_CONFIGURATION_DISPLAY,
           },
         },
       })
@@ -107,13 +123,19 @@ export class IssuerService {
     return this.initPromise
   }
 
-  public async createOffer(claims: { organization: string; role: string }) {
+  public async createOffer(
+    claims: { organization: string; role: string },
+    opts?: { requireWalletAttestation?: boolean },
+  ) {
     await this.ensureInitialized()
     const { credentialOffer, issuanceSession } = await this.issuerApi().createCredentialOffer({
       issuerId: ISSUER_ID,
       credentialConfigurationIds: [CREDENTIAL_CONFIGURATION_ID],
       preAuthorizedCodeFlowConfig: {},
       issuanceMetadata: claims,
+      ...(opts?.requireWalletAttestation
+        ? { authorization: { requireWalletAttestation: true, requireDpop: false } }
+        : {}),
     })
     return { credentialOffer, issuanceSessionId: issuanceSession.id }
   }

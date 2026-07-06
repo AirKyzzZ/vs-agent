@@ -39,12 +39,13 @@ export function setupOpenId4Vc(
   return {
     modules: {
       openId4Vc: new OpenId4VcModule(config),
-      ...(options.holderEnabled || options.verifierEnabled
+      ...(options.holderEnabled || options.verifierEnabled || options.issuerEnabled
         ? {
             x509: new X509Module({
               getTrustedCertificatesForVerification: (_agentContext, { certificateChain, verification }) =>
                 verification.type === 'oauth2SecuredAuthorizationRequest' ||
-                verification.type === 'credential'
+                verification.type === 'credential' ||
+                verification.type === 'oauth2ClientAttestation'
                   ? certificateChain.map(certificate => certificate.toString('base64'))
                   : undefined,
             }),

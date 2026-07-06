@@ -14,7 +14,11 @@ export class IssuerController {
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'invalid claims')
     }
-    return await this.issuerService.createOffer(claims)
+    const externalWallet = (body as { externalWallet?: unknown })?.externalWallet
+    if (externalWallet !== undefined && typeof externalWallet !== 'boolean') {
+      throw new BadRequestException('externalWallet must be a boolean')
+    }
+    return await this.issuerService.createOffer(claims, { requireWalletAttestation: externalWallet === true })
   }
 
   @Get(':id')
