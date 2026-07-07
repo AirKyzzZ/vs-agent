@@ -13,6 +13,7 @@ export const DISCLOSURE_FRAME = { _sd: ['organization', 'role'] }
 export const CREDENTIAL_CONFIGURATION_DISPLAY = [
   { name: 'Unfold Attestation', locale: 'en', background_color: '#763EF0', text_color: '#FFFFFF' },
 ]
+export const CREDENTIAL_FORMAT = 'vc+sd-jwt' as const
 
 export function parseOfferClaims(body: unknown): { organization: string; role: string } {
   const candidate = body as { organization?: unknown; role?: unknown } | null | undefined
@@ -61,6 +62,7 @@ export function buildCredentialRequestToCredentialMapper(
           issuer: options.publicApiBaseUrl,
         },
         disclosureFrame: DISCLOSURE_FRAME,
+        headerType: CREDENTIAL_FORMAT,
       })),
     }
   }
@@ -90,7 +92,7 @@ export class IssuerService {
         display: [{ name: 'Unfold Ecosystem Authority', locale: 'en' }],
         credentialConfigurationsSupported: {
           [CREDENTIAL_CONFIGURATION_ID]: {
-            format: 'dc+sd-jwt',
+            format: CREDENTIAL_FORMAT,
             vct: this.options.vct,
             cryptographic_binding_methods_supported: ['jwk'],
             credential_signing_alg_values_supported: ['ES256'],
@@ -107,6 +109,7 @@ export class IssuerService {
           ...existing.credentialConfigurationsSupported,
           [CREDENTIAL_CONFIGURATION_ID]: {
             ...existing.credentialConfigurationsSupported[CREDENTIAL_CONFIGURATION_ID],
+            format: CREDENTIAL_FORMAT,
             display: CREDENTIAL_CONFIGURATION_DISPLAY,
           },
         },
