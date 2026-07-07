@@ -3,9 +3,10 @@ import type { AskarModuleConfigStoreOptions, AskarSqliteStorageConfig } from '@c
 import type { Server } from 'node:http'
 
 import { AskarModule } from '@credo-ts/askar'
-import { Agent, ConsoleLogger, LogLevel, utils } from '@credo-ts/core'
+import { Agent, ConsoleLogger, DidsModule, LogLevel, utils } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
 import { askar } from '@openwallet-foundation/askar-nodejs'
+import { WebDidRegistrar } from '@verana-labs/vs-agent-sdk'
 import express from 'express'
 
 import { setupOpenId4Vc } from '../../src/sdk/setupOpenId4Vc'
@@ -51,6 +52,7 @@ export async function startTestAgent(
     dependencies: agentDependencies,
     modules: {
       askar: new AskarModule({ askar, store: askarStore(role) }),
+      dids: new DidsModule({ registrars: [new WebDidRegistrar()] }),
       ...modules,
     },
   })

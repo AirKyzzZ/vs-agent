@@ -4,7 +4,7 @@ import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
 import { TrustClient } from '../trust/TrustClient'
 
-import { type CertificateHandle, didFromCertificateSan, ensureP256CertificateWithDidSan } from './AgentSetup'
+import { type CertificateHandle, ensureP256CertificateWithDidSan } from './AgentSetup'
 import { buildReceipt, type ProofOfTrustReceipt } from './receipt'
 
 const TENANTS = ['trusted', 'rogue'] as const
@@ -113,8 +113,7 @@ export class VerifierService {
     if (claims && 'role' in claims) disclosedClaims.role = claims.role
 
     const iss = typeof presentation?.payload?.iss === 'string' ? presentation.payload.iss : null
-    const issuerCertificate = presentation?.issuer?.method === 'x5c' ? presentation.issuer.x5c[0] : undefined
-    const issuerDid = didFromCertificateSan(issuerCertificate)
+    const issuerDid = iss?.startsWith('did:') ? iss : null
 
     const verifierDid = tenant === 'trusted' ? (this.agent.did ?? null) : this.options.rogueVerifierDid
 

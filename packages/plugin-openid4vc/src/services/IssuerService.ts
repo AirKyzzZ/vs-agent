@@ -3,11 +3,12 @@ import type { OpenId4VcPluginOptions } from '../types'
 import type { OpenId4VciCredentialRequestToCredentialMapper } from '@credo-ts/openid4vc'
 import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
-import { ClaimFormat, VerificationMethod, utils } from '@credo-ts/core'
+import { ClaimFormat, DidRepository, VerificationMethod, utils } from '@credo-ts/core'
 
 import { ensureP256CertificateWithDidSan } from './AgentSetup'
 
 export const ISSUER_ID = 'unfold'
+export const ISSUER_SIGNING_KEY_FRAGMENT = 'oid4vc-es256'
 export const CREDENTIAL_CONFIGURATION_ID = 'unfold-attestation'
 export const DISCLOSURE_FRAME = { _sd: ['organization', 'role'] }
 export const CREDENTIAL_CONFIGURATION_DISPLAY = [
@@ -39,13 +40,14 @@ export function buildSdJwtPayload(vct: string, claims: { organization: string; r
 }
 
 let issuerCertificate: CertificateHandle | undefined
+let issuerDid: string | undefined
 
 export function buildCredentialRequestToCredentialMapper(
   options: OpenId4VcPluginOptions,
 ): OpenId4VciCredentialRequestToCredentialMapper {
   return ({ holderBinding, issuanceSession }) => {
     if (!issuerCertificate) throw new Error('issuer certificate not initialized')
-    const certificate = issuerCertificate.certificate
+    if (!issuerDid) throw new Error('issuer did not initialized')
     const claims = issuanceSession.issuanceMetadata as { organization: string; role: string }
     return {
       type: 'credentials',
@@ -57,9 +59,8 @@ export function buildCredentialRequestToCredentialMapper(
             ? { method: 'did' as const, didUrl: holderKey.didUrl }
             : { method: 'jwk' as const, jwk: holderKey.jwk },
         issuer: {
-          method: 'x5c' as const,
-          x5c: [certificate],
-          issuer: options.publicApiBaseUrl,
+          method: 'did' as const,
+          didUrl: `${issuerDid}#${ISSUER_SIGNING_KEY_FRAGMENT}`,
         },
         disclosureFrame: DISCLOSURE_FRAME,
         headerType: CREDENTIAL_FORMAT,
@@ -84,6 +85,7 @@ export class IssuerService {
       sanUri: this.agent.did ?? this.options.publicApiBaseUrl,
       sanDns: host,
     })
+    issuerDid = this.agent.did
     const issuerApi = this.issuerApi()
     const existing = await issuerApi.getIssuerByIssuerId(ISSUER_ID).catch(() => null)
     if (!existing) {
@@ -153,20 +155,50 @@ export class IssuerService {
     try {
       const [didRecord] = await this.agent.dids.getCreatedDids({ did: this.agent.did })
       const didDocument = didRecord?.didDocument
-      if (!didDocument) return
-      const methodId = `${this.agent.did}#oid4vc-es256`
-      if (didDocument.verificationMethod?.some(vm => vm.id === methodId)) return
-      didDocument.verificationMethod = [
-        ...(didDocument.verificationMethod ?? []),
-        new VerificationMethod({
-          id: methodId,
-          type: 'JsonWebKey2020',
-          controller: this.agent.did,
-          publicKeyJwk: certificate.certificate.publicJwk.toJson(),
-        }),
-      ]
-      didDocument.assertionMethod = [...(didDocument.assertionMethod ?? []), methodId]
-      await this.agent.dids.update({ did: this.agent.did, didDocument })
+      if (!didRecord || !didDocument) {
+        this.agent.config.logger.warn(
+          `no created DID record found for ${this.agent.did}, cannot publish ES256 key`,
+        )
+        return
+      }
+
+      const methodId = `${this.agent.did}#${ISSUER_SIGNING_KEY_FRAGMENT}`
+      const relativeKeyId = `#${ISSUER_SIGNING_KEY_FRAGMENT}`
+      const keyPublished = didDocument.verificationMethod?.some(vm => vm.id === methodId) ?? false
+      const keyMapped = didRecord.keys?.some(k => k.didDocumentRelativeKeyId === relativeKeyId) ?? false
+      if (keyPublished && keyMapped) return
+
+      // The webvh registrar doesn't merge new key mappings into the DidRecord on update, so
+      // persist the kms key mapping directly first (mirrors VsAgent.persistDidDocumentKey).
+      // Otherwise Credo's did-method signer can't resolve the private key for this VM.
+      if (!keyMapped) {
+        const didRepository = this.agent.dependencyManager.resolve(DidRepository)
+        didRecord.keys = [
+          ...(didRecord.keys ?? []),
+          { kmsKeyId: certificate.keyId, didDocumentRelativeKeyId: relativeKeyId },
+        ]
+        await didRepository.update(this.agent.context, didRecord)
+      }
+
+      if (!keyPublished) {
+        didDocument.verificationMethod = [
+          ...(didDocument.verificationMethod ?? []),
+          new VerificationMethod({
+            id: methodId,
+            type: 'JsonWebKey2020',
+            controller: this.agent.did,
+            publicKeyJwk: certificate.certificate.publicJwk.toJson(),
+          }),
+        ]
+        didDocument.assertionMethod = [...(didDocument.assertionMethod ?? []), methodId]
+
+        const result = await this.agent.dids.update({ did: this.agent.did, didDocument })
+        if (result.didState.state !== 'finished') {
+          this.agent.config.logger.warn(
+            `failed to publish ES256 key in DID document for ${this.agent.did}: ${JSON.stringify(result.didState)}`,
+          )
+        }
+      }
     } catch (error) {
       this.agent.config.logger.warn(`could not publish ES256 key in DID document: ${error}`)
     }
