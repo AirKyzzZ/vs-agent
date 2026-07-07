@@ -7,7 +7,7 @@ import { GateBlockedError, WalletService } from '../src/services/WalletService'
 import { startResolverStub } from './helpers/resolverStub'
 import { startTestAgent } from './helpers/testAgent'
 
-const ISSUER_DID = 'did:web:issuer.test'
+const ISSUER_DID = 'did:webvh:test:issuer'
 const VERIFIER_DID = 'did:webvh:test:verifier'
 const ROGUE_DID = 'did:web:rogue.example'
 const VCT = 'https://issuer.test/vct/unfold-attestation'
@@ -41,14 +41,6 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
       startTestAgent('holder', { ...base, holderEnabled: true }),
       startTestAgent('verifier', { ...base, verifierEnabled: true }),
     ])
-    // did-method issuer signing requires a real created DID record (not just a label) so
-    // Credo can dereference the signing verification method and its kms key mapping.
-    const issuerDidResult = await issuer.agent.dids.create({ method: 'web', domain: 'issuer.test' })
-    if (issuerDidResult.didState.state !== 'finished' || issuerDidResult.didState.did !== ISSUER_DID) {
-      throw new Error(
-        `failed to create test issuer did:web record: ${JSON.stringify(issuerDidResult.didState)}`,
-      )
-    }
     issuer.agent.did = ISSUER_DID
     verifier.agent.did = VERIFIER_DID
     issuerService = new IssuerService(issuer.agent, issuer.options)
@@ -56,24 +48,6 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
     verifierService = new VerifierService(verifier.agent, verifier.options)
     await issuerService.ensureInitialized()
     await verifierService.ensureInitialized()
-
-    // The wallet and the verifier both need to resolve the issuer's did:web to verify the
-    // credential signature. Import it into their own storage so resolution stays local (no
-    // real network access for the 'issuer.test' domain used in this suite).
-    const [issuerDidRecord] = await issuer.agent.dids.getCreatedDids({ did: ISSUER_DID })
-    if (!issuerDidRecord?.didDocument) {
-      throw new Error('issuer did document not found after initialization')
-    }
-    await wallet.agent.dids.import({
-      did: ISSUER_DID,
-      didDocument: issuerDidRecord.didDocument,
-      overwrite: true,
-    })
-    await verifier.agent.dids.import({
-      did: ISSUER_DID,
-      didDocument: issuerDidRecord.didDocument,
-      overwrite: true,
-    })
   }, 120000)
 
   afterAll(async () => {
