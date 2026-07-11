@@ -1,9 +1,10 @@
 import type { OpenId4VcPluginOptions } from '../../src/types'
 import type { AskarModuleConfigStoreOptions, AskarSqliteStorageConfig } from '@credo-ts/askar'
+import type { DidResolver } from '@credo-ts/core'
 import type { Server } from 'node:http'
 
 import { AskarModule } from '@credo-ts/askar'
-import { Agent, ConsoleLogger, LogLevel, utils } from '@credo-ts/core'
+import { Agent, ConsoleLogger, DidsModule, LogLevel, utils } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
 import { askar } from '@openwallet-foundation/askar-nodejs'
 import express from 'express'
@@ -32,6 +33,7 @@ const LOG_LEVEL = process.env.OID4VC_TEST_LOG ? LogLevel.Debug : LogLevel.Off
 export async function startTestAgent(
   role: Role,
   optionsBase: Omit<OpenId4VcPluginOptions, 'publicApiBaseUrl'>,
+  didResolvers?: DidResolver[],
 ): Promise<TestAgent> {
   const app = express()
   const server: Server = await new Promise(resolve => {
@@ -51,6 +53,7 @@ export async function startTestAgent(
     dependencies: agentDependencies,
     modules: {
       askar: new AskarModule({ askar, store: askarStore(role) }),
+      ...(didResolvers ? { dids: new DidsModule({ resolvers: didResolvers }) } : {}),
       ...modules,
     },
   })

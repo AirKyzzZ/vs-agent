@@ -7,6 +7,7 @@ import { Kms, X509Certificate } from '@credo-ts/core'
 
 import { findConfigurationByVct } from '../config'
 import { TrustClient } from '../trust/TrustClient'
+import { blockingBindingVerdict, verifyKeyBoundToDid } from '../trust/keyBinding'
 
 import { didFromCertificateSan } from './AgentSetup'
 import { GateStore } from './GateStore'
@@ -86,7 +87,19 @@ export class WalletService {
       ? findConfigurationByVct(this.options.credentialConfigurations, requestedVct)
       : undefined
     const vtjscId = config?.vtjscId ?? null
-    const trust: TrustVerdict = await this.trustClient.verdictFor('verifier', verifierDid, vtjscId)
+
+    // Authenticate the DID -> request-signing-key binding before the registry lookup and the
+    // fail-closed disclosure gate: the verifier's actual request-signing key must be a verification
+    // method of the asserted verifier DID's document, else PII could be disclosed to an impostor.
+    const verifierKey = this.extractVerifierSigningKey(resolved)
+    const verifierBinding = await verifyKeyBoundToDid(this.agent, verifierDid, verifierKey, [
+      'authentication',
+      'assertionMethod',
+    ])
+    const trust: TrustVerdict =
+      verifierBinding === 'bound'
+        ? await this.trustClient.verdictFor('verifier', verifierDid, vtjscId)
+        : blockingBindingVerdict(verifierDid, vtjscId, verifierBinding)
     const gateId = this.gates.create({ ...trust, resolved })
     return {
       gateId,
@@ -136,6 +149,23 @@ export class WalletService {
       return didFromCertificateSan(X509Certificate.fromEncodedCertificate(signer.x5c[0]))
     } catch {
       return null
+    }
+  }
+
+  private extractVerifierSigningKey(resolved: {
+    signedAuthorizationRequest?: { signer: unknown }
+  }): Record<string, unknown> | undefined {
+    const signer = resolved.signedAuthorizationRequest?.signer as
+      | { method?: string; x5c?: string[] }
+      | undefined
+    if (signer?.method !== 'x5c' || !signer.x5c?.length) return undefined
+    try {
+      return X509Certificate.fromEncodedCertificate(signer.x5c[0]).publicJwk.toJson() as Record<
+        string,
+        unknown
+      >
+    } catch {
+      return undefined
     }
   }
 

@@ -8,6 +8,7 @@ import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
 import { findCredentialConfiguration, resolveFormat } from '../config'
 import { TrustClient } from '../trust/TrustClient'
+import { blockingBindingVerdict, verifyKeyBoundToDid } from '../trust/keyBinding'
 
 import { type CertificateHandle, didFromCertificateSan, ensureP256CertificateWithDidSan } from './AgentSetup'
 import { buildReceipt, type ProofOfTrustReceipt } from './receipt'
@@ -133,9 +134,19 @@ export class VerifierService {
     const issuerDid = didFromCertificateSan(issuerCertificate)
     const verifierDid = this.agent.did ?? null
 
+    // Authenticate the DID -> signing-key binding before the registry lookup: the credential's
+    // actual signing key must be an assertionMethod of the asserted issuer DID's document. A
+    // self-signed cert asserting someone else's DID in its SAN fails here and never reaches Verana.
+    const issuerKey = issuerCertificate
+      ? (issuerCertificate.publicJwk.toJson() as Record<string, unknown>)
+      : undefined
+    const issuerBinding = await verifyKeyBoundToDid(this.agent, issuerDid, issuerKey, ['assertionMethod'])
+
     const [verifierTrust, issuerTrust] = await Promise.all([
       this.trustClient.verdictFor('verifier', verifierDid, config.vtjscId),
-      this.trustClient.verdictFor('issuer', issuerDid, config.vtjscId),
+      issuerBinding === 'bound'
+        ? this.trustClient.verdictFor('issuer', issuerDid, config.vtjscId)
+        : Promise.resolve(blockingBindingVerdict(issuerDid, config.vtjscId, issuerBinding)),
     ])
 
     return {
@@ -153,6 +164,13 @@ export class VerifierService {
         verifiedAt: new Date().toISOString(),
       }),
     }
+  }
+
+  /** Public JWK of this verifier's request-signing key (published into its DID document). */
+  public getSigningJwk(): Record<string, unknown> | null {
+    return this.certificate
+      ? (this.certificate.certificate.publicJwk.toJson() as Record<string, unknown>)
+      : null
   }
 
   private verifierApi() {

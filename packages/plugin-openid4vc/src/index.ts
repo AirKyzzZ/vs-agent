@@ -44,3 +44,5 @@ export type {
 export { TrustClient } from './trust/TrustClient'
 export { computeVerdict } from './trust/verdict'
 export type { Verdict, Q1Result, TrustEvidence, TrustVerdict } from './trust/types'
+export { verifyKeyBoundToDid, blockingBindingVerdict, canonicalPublicKey } from './trust/keyBinding'
+export type { KeyBindingResult, VerificationRelationship } from './trust/keyBinding'

@@ -1,11 +1,13 @@
 import type { OpenId4VcCredentialConfiguration } from '../src/types'
+import type { DidDocument } from '@credo-ts/core'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { IssuerService } from '../src/services/IssuerService'
+import { getIssuerSigningJwk, IssuerService } from '../src/services/IssuerService'
 import { UnknownSessionError, VerifierService } from '../src/services/VerifierService'
 import { GateBlockedError, WalletService } from '../src/services/WalletService'
 
+import { didDocumentWithKey, MapDidResolver } from './helpers/didResolver'
 import { startResolverStub } from './helpers/resolverStub'
 import { startTestAgent } from './helpers/testAgent'
 
@@ -31,6 +33,7 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
   let issuerService: IssuerService
   let walletService: WalletService
   let verifierService: VerifierService
+  const didDocuments = new Map<string, DidDocument>()
 
   beforeAll(async () => {
     stub = await startResolverStub({
@@ -44,10 +47,13 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
       resolverUrl: stub.url,
       credentialConfigurations: [CREDENTIAL_CONFIGURATION],
     }
+    // The wallet resolves the verifier DID and the verifier resolves the issuer DID for the
+    // key-binding check; both read this shared map, populated with the real keys after init.
+    const resolvers = [new MapDidResolver(didDocuments)]
     ;[issuer, wallet, verifier] = await Promise.all([
       startTestAgent('issuer', { ...base, issuerEnabled: true }),
-      startTestAgent('holder', { ...base, holderEnabled: true }),
-      startTestAgent('verifier', { ...base, verifierEnabled: true }),
+      startTestAgent('holder', { ...base, holderEnabled: true }, resolvers),
+      startTestAgent('verifier', { ...base, verifierEnabled: true }, resolvers),
     ])
     issuer.agent.did = ISSUER_DID
     verifier.agent.did = VERIFIER_DID
@@ -56,6 +62,12 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
     verifierService = new VerifierService(verifier.agent, verifier.options)
     await issuerService.ensureInitialized()
     await verifierService.ensureInitialized()
+
+    const issuerJwk = getIssuerSigningJwk()
+    const verifierJwk = verifierService.getSigningJwk()
+    if (!issuerJwk || !verifierJwk) throw new Error('signing keys not initialized')
+    didDocuments.set(ISSUER_DID, didDocumentWithKey(ISSUER_DID, issuerJwk))
+    didDocuments.set(VERIFIER_DID, didDocumentWithKey(VERIFIER_DID, verifierJwk))
   }, 120000)
 
   afterAll(async () => {
@@ -99,6 +111,35 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
     const resolved = await walletService.resolveRequest(authorizationRequest)
     await walletService.share(resolved.gateId)
     await expect(walletService.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
+  }, 60000)
+
+  it('blocks disclosure when the verifier signing key is not bound to its DID document (spoofed SAN)', async () => {
+    const bound = didDocuments.get(VERIFIER_DID)
+    didDocuments.set(
+      VERIFIER_DID,
+      didDocumentWithKey(VERIFIER_DID, { kty: 'EC', crv: 'P-256', x: 'attacker-key-x', y: 'attacker-key-y' }),
+    )
+    try {
+      const { authorizationRequest } = await verifierService.createRequest()
+      const resolved = await walletService.resolveRequest(authorizationRequest)
+      expect(resolved.verdict).toBe('UNTRUSTED')
+      await expect(walletService.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
+    } finally {
+      if (bound) didDocuments.set(VERIFIER_DID, bound)
+    }
+  }, 60000)
+
+  it('blocks disclosure when the verifier DID cannot be resolved (fails closed)', async () => {
+    const bound = didDocuments.get(VERIFIER_DID)
+    didDocuments.delete(VERIFIER_DID)
+    try {
+      const { authorizationRequest } = await verifierService.createRequest()
+      const resolved = await walletService.resolveRequest(authorizationRequest)
+      expect(resolved.verdict).toBe('RESOLVER_UNAVAILABLE')
+      await expect(walletService.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
+    } finally {
+      if (bound) didDocuments.set(VERIFIER_DID, bound)
+    }
   }, 60000)
 
   it('blocks disclosure to an UNTRUSTED verifier (not on the registry)', async () => {
