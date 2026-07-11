@@ -61,6 +61,16 @@ Important: `vtjscId` must be the **VTJSC URL** (e.g. `https://<issuer>/vt/schema
 - **The gate is server-side, fail-closed, and single-use.** Only `TRUSTED_AUTHORIZED` opens it; every other state (including "resolver down") blocks. Disclosure is held in `GateStore` and never returned until the gate opens.
 - **SD-JWT VC carries no `credentialSchema`,** so the VTJSC is mapped out-of-band via the `vtjscId` config option (unlike JSON-LD `ldp_vc`, which can carry it in-band).
 
+## Real-wallet interoperability
+
+Validated end-to-end against the **EUDI reference wallet** (`eu-digital-identity-wallet/eudi-app-android-wallet-ui`): full OID4VCI issuance, including a real Wallet Unit Attestation the issuer accepts. Three behaviors bridge Credo to what real EU wallets require:
+
+- **Issues `dc+sd-jwt`** (the renamed SD-JWT VC media type), with `vc+sd-jwt` kept as a fallback credential configuration. `IssuerService` signs each credential with the format of the configuration the wallet requested.
+- **Advertises attestation-based client auth.** Credo hardcodes its `/.well-known/oauth-authorization-server` metadata; an issuer-only middleware (`advertiseClientAttestationMetadata`) overlays `client_attestation_pop_signing_alg_values_supported` (which EUDI wallet-core pre-flights on) plus the related fields.
+- **Serves `/.well-known/jwt-vc-issuer`** with the issuer's signing JWKS, for SD-JWT VC issuer-key discovery by wallets that require it even when the credential carries an x5c chain.
+
+Wallets enforce different policy on the same protocol (media type, attestation, issuer/reader trust); target the EUDI ARF / HAIP profile (`dc+sd-jwt`) and serve the union of discovery endpoints. The Verana trust verdict is independent of all of this — it is a server-side resolver call, identical across wallets and formats.
+
 ## Configuration
 
 `OpenId4VcPluginOptions` (`src/types.ts`):
