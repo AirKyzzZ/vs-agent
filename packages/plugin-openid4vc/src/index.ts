@@ -25,6 +25,7 @@ export type { GateEntry } from './services/GateStore'
 export { ensureP256CertificateWithDidSan, didFromCertificateSan } from './services/AgentSetup'
 export type { CertificateHandle } from './services/AgentSetup'
 export {
+  buildVctTypeMetadata,
   DEFAULT_SD_JWT_VC_FORMAT,
   findConfigurationByVct,
   findCredentialConfiguration,

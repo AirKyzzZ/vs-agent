@@ -10,6 +10,7 @@ import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 import { ClaimFormat, VerificationMethod, utils } from '@credo-ts/core'
 
 import {
+  buildVctTypeMetadata,
   findCredentialConfiguration,
   parseOfferClaims,
   resolveDisclosureFrame,
@@ -182,8 +183,8 @@ export class IssuerService {
     return { state: session.state }
   }
 
-  /** VCT type metadata for the credential configuration served at `<publicApiBaseUrl>/vct/<id>`. */
-  public getVctMetadata(id: string): { vct: string; name: string; description?: string } | undefined {
+  /** SD-JWT VC Type Metadata for the credential configuration served at `<publicApiBaseUrl>/vct/<id>`. */
+  public getVctMetadata(id: string): Record<string, unknown> | undefined {
     const config = this.options.credentialConfigurations.find(candidate => {
       try {
         return new URL(candidate.vct).pathname.split('/').pop() === id
@@ -191,12 +192,7 @@ export class IssuerService {
         return false
       }
     })
-    if (!config) return undefined
-    return {
-      vct: config.vct,
-      name: config.name,
-      ...(config.description ? { description: config.description } : {}),
-    }
+    return config ? buildVctTypeMetadata(config) : undefined
   }
 
   private async publishSigningKeyInDidDocument(certificate: CertificateHandle): Promise<void> {

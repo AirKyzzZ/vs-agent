@@ -3,6 +3,7 @@ import type { OpenId4VcCredentialConfiguration } from '../src/types'
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildVctTypeMetadata,
   findConfigurationByVct,
   findCredentialConfiguration,
   parseOfferClaims,
@@ -73,6 +74,50 @@ describe('validateCredentialConfigurations', () => {
     expect(() => validateCredentialConfigurations([{ ...base, disclosureFrame: ['ghost'] }])).toThrow(
       /subset/,
     )
+  })
+  it('rejects an invalid format and non-string claims', () => {
+    expect(() => validateCredentialConfigurations([{ ...base, format: 'ldp_vc' as never }])).toThrow(/format/)
+    expect(() => validateCredentialConfigurations([{ ...base, claims: ['organization', ''] }])).toThrow(
+      /claim/,
+    )
+  })
+  it('allows the same vct under two different formats but rejects the same vct+format twice', () => {
+    expect(() =>
+      validateCredentialConfigurations([
+        { ...base, id: 'a', format: 'dc+sd-jwt' },
+        { ...base, id: 'b', format: 'vc+sd-jwt' },
+      ]),
+    ).not.toThrow()
+    expect(() =>
+      validateCredentialConfigurations([
+        { ...base, id: 'a', format: 'dc+sd-jwt' },
+        { ...base, id: 'b', format: 'dc+sd-jwt' },
+      ]),
+    ).toThrow(/duplicate credential configuration for vct/)
+  })
+})
+
+describe('buildVctTypeMetadata', () => {
+  it('builds a display block with rendering and per-claim descriptors', () => {
+    const metadata = buildVctTypeMetadata({
+      ...base,
+      description: 'An org attestation',
+      disclosureFrame: ['role'],
+      display: { locale: 'en', backgroundColor: '#763EF0', textColor: '#FFFFFF' },
+    }) as {
+      vct: string
+      display: { name: string; rendering: { simple: Record<string, unknown> } }[]
+      claims: { path: string[]; sd: string }[]
+    }
+    expect(metadata.vct).toBe(base.vct)
+    expect(metadata.display[0].rendering.simple).toEqual({
+      background_color: '#763EF0',
+      text_color: '#FFFFFF',
+    })
+    expect(metadata.claims.map(claim => [claim.path[0], claim.sd])).toEqual([
+      ['organization', 'never'],
+      ['role', 'allowed'],
+    ])
   })
 })
 
