@@ -1,4 +1,5 @@
 import type { Q1Result, TrustVerdict } from './types'
+
 import { computeVerdict } from './verdict'
 
 export class TrustClient {
@@ -25,7 +26,11 @@ export class TrustClient {
     }
   }
 
-  public async checkAuthorization(role: 'issuer' | 'verifier', did: string, vtjscId: string): Promise<boolean | null> {
+  public async checkAuthorization(
+    role: 'issuer' | 'verifier',
+    did: string,
+    vtjscId: string,
+  ): Promise<boolean | null> {
     try {
       const res = await this.fetchFn(this.authorizationUrl(role, did, vtjscId), {
         headers: { accept: 'application/json' },
@@ -47,7 +52,14 @@ export class TrustClient {
     if (!did) {
       return {
         verdict: 'UNTRUSTED',
-        evidence: { did: null, trustStatus: null, authorized: null, vtjscId, queries: [], note: 'no DID could be extracted for this party' },
+        evidence: {
+          did: null,
+          trustStatus: null,
+          authorized: null,
+          vtjscId,
+          queries: [],
+          note: 'no DID could be extracted for this party',
+        },
       }
     }
     const queries = [this.resolveUrl(did)]

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { computeVerdict } from '../src/trust/verdict'
 
 describe('computeVerdict', () => {
