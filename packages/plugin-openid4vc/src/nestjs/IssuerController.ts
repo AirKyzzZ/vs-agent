@@ -1,24 +1,40 @@
-import { BadRequestException, Body, Controller, Get, Inject, Param, Post } from '@nestjs/common'
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Post,
+} from '@nestjs/common'
 
-import { parseOfferClaims, IssuerService } from '../services/IssuerService'
+import { IssuerService } from '../services/IssuerService'
 
-@Controller('oid4vc-demo/offers')
+@Controller('oid4vc/offers')
 export class IssuerController {
   public constructor(@Inject(IssuerService) private readonly issuerService: IssuerService) {}
 
   @Post()
   public async createOffer(@Body() body: unknown) {
-    let claims: { organization: string; role: string }
-    try {
-      claims = parseOfferClaims(body)
-    } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'invalid claims')
+    const { credentialConfigurationId, claims, externalWallet } = (body ?? {}) as {
+      credentialConfigurationId?: unknown
+      claims?: unknown
+      externalWallet?: unknown
     }
-    const externalWallet = (body as { externalWallet?: unknown })?.externalWallet
+    if (typeof credentialConfigurationId !== 'string' || !credentialConfigurationId.trim()) {
+      throw new BadRequestException('credentialConfigurationId is required')
+    }
     if (externalWallet !== undefined && typeof externalWallet !== 'boolean') {
       throw new BadRequestException('externalWallet must be a boolean')
     }
-    return await this.issuerService.createOffer(claims, { requireWalletAttestation: externalWallet === true })
+    try {
+      return await this.issuerService.createOffer(credentialConfigurationId, claims, {
+        requireWalletAttestation: externalWallet === true,
+      })
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'invalid offer')
+    }
   }
 
   @Get(':id')
@@ -29,13 +45,12 @@ export class IssuerController {
 
 @Controller('vct')
 export class VctController {
-  @Get('unfold-attestation')
-  public getVct() {
-    return {
-      vct: 'https://unfold-org.77.42.86.24.sslip.io/vct/unfold-attestation',
-      name: 'Unfold Attestation',
-      description:
-        'Non-qualified attestation for the Unfold demonstration ecosystem, anchored in Verana trust registry 184, schema 249',
-    }
+  public constructor(@Inject(IssuerService) private readonly issuerService: IssuerService) {}
+
+  @Get(':id')
+  public getVct(@Param('id') id: string) {
+    const metadata = this.issuerService.getVctMetadata(id)
+    if (!metadata) throw new NotFoundException(`unknown credential type '${id}'`)
+    return metadata
   }
 }

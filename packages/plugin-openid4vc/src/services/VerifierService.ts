@@ -1,14 +1,19 @@
-import type { OpenId4VcPluginOptions } from '../types'
+import type {
+  OpenId4VcAgentModules,
+  OpenId4VcCredentialConfiguration,
+  OpenId4VcPluginOptions,
+} from '../types'
 import type { X509Certificate } from '@credo-ts/core'
 import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
+import { findCredentialConfiguration, resolveFormat } from '../config'
 import { TrustClient } from '../trust/TrustClient'
 
 import { type CertificateHandle, didFromCertificateSan, ensureP256CertificateWithDidSan } from './AgentSetup'
 import { buildReceipt, type ProofOfTrustReceipt } from './receipt'
 
-const TENANTS = ['trusted', 'rogue'] as const
-export type Tenant = (typeof TENANTS)[number]
+const DEFAULT_VERIFIER_ID = 'verifier'
+const DEFAULT_VERIFIER_DISPLAY_NAME = 'Verifier'
 
 export class UnknownSessionError extends Error {}
 
@@ -20,41 +25,40 @@ interface DecodedSdJwtPresentation {
 
 export class VerifierService {
   private initPromise?: Promise<void>
-  private readonly certificates = new Map<Tenant, CertificateHandle>()
-  private readonly sessionTenants = new Map<string, Tenant>()
+  private certificate?: CertificateHandle
+  private readonly sessionConfigs = new Map<string, string>()
   private readonly trustClient: TrustClient
 
   public constructor(
-    private readonly agent: VsAgent,
+    private readonly agent: VsAgent<OpenId4VcAgentModules>,
     private readonly options: OpenId4VcPluginOptions,
   ) {
     this.trustClient = new TrustClient(options.resolverUrl)
   }
 
+  private get verifierId(): string {
+    return this.options.verifierId ?? DEFAULT_VERIFIER_ID
+  }
+
+  private get displayName(): string {
+    return this.options.verifierDisplayName ?? DEFAULT_VERIFIER_DISPLAY_NAME
+  }
+
   private async initialize(): Promise<void> {
     const host = new URL(this.options.publicApiBaseUrl).hostname
+    this.certificate = await ensureP256CertificateWithDidSan(this.agent, {
+      genericRecordId: 'oid4vc-verifier-certificate',
+      commonName: this.displayName,
+      sanUri: this.agent.did ?? this.options.publicApiBaseUrl,
+      sanDns: host,
+    })
     const verifierApi = this.verifierApi()
-    for (const tenant of TENANTS) {
-      const sanUri =
-        tenant === 'trusted'
-          ? (this.agent.did ?? this.options.publicApiBaseUrl)
-          : this.options.rogueVerifierDid
-      this.certificates.set(
-        tenant,
-        await ensureP256CertificateWithDidSan(this.agent, {
-          genericRecordId: `oid4vc-verifier-certificate-${tenant}`,
-          commonName: tenant === 'trusted' ? 'Unfold Verifier' : 'Rogue Verifier',
-          sanUri,
-          sanDns: host,
-        }),
-      )
-      const existing = await verifierApi.getVerifierByVerifierId(tenant).catch(() => null)
-      if (!existing) {
-        await verifierApi.createVerifier({
-          verifierId: tenant,
-          clientMetadata: { client_name: tenant === 'trusted' ? 'Unfold Verifier' : 'Rogue Verifier' },
-        })
-      }
+    const existing = await verifierApi.getVerifierByVerifierId(this.verifierId).catch(() => null)
+    if (!existing) {
+      await verifierApi.createVerifier({
+        verifierId: this.verifierId,
+        clientMetadata: { client_name: this.displayName },
+      })
     }
   }
 
@@ -66,36 +70,47 @@ export class VerifierService {
     return this.initPromise
   }
 
-  public async createRequest(tenant: Tenant): Promise<{ authorizationRequest: string; sessionId: string }> {
+  private credentialConfiguration(credentialConfigurationId?: string): OpenId4VcCredentialConfiguration {
+    const config = credentialConfigurationId
+      ? findCredentialConfiguration(this.options.credentialConfigurations, credentialConfigurationId)
+      : this.options.credentialConfigurations[0]
+    if (!config) throw new Error(`unknown credential configuration '${credentialConfigurationId}'`)
+    return config
+  }
+
+  public async createRequest(
+    credentialConfigurationId?: string,
+  ): Promise<{ authorizationRequest: string; sessionId: string }> {
     await this.ensureInitialized()
-    const certificate = this.certificates.get(tenant)
-    if (!certificate) throw new Error(`no certificate initialized for tenant '${tenant}'`)
+    if (!this.certificate) throw new Error('verifier certificate not initialized')
+    const config = this.credentialConfiguration(credentialConfigurationId)
     const { authorizationRequest, verificationSession } = await this.verifierApi().createAuthorizationRequest(
       {
-        verifierId: tenant,
-        requestSigner: { method: 'x5c', x5c: [certificate.certificate], clientIdPrefix: 'x509_hash' },
+        verifierId: this.verifierId,
+        requestSigner: { method: 'x5c', x5c: [this.certificate.certificate], clientIdPrefix: 'x509_hash' },
         responseMode: 'direct_post.jwt',
         dcql: {
           query: {
             credentials: [
               {
-                id: 'unfold-attestation',
-                format: 'dc+sd-jwt',
-                meta: { vct_values: [this.options.vct] },
-                claims: [{ path: ['organization'] }, { path: ['role'] }],
+                id: config.id,
+                format: resolveFormat(config),
+                meta: { vct_values: [config.vct] },
+                claims: config.claims.map(name => ({ path: [name] })),
               },
             ],
           },
         },
       },
     )
-    this.sessionTenants.set(verificationSession.id, tenant)
+    this.sessionConfigs.set(verificationSession.id, config.id)
     return { authorizationRequest, sessionId: verificationSession.id }
   }
 
   public async getSession(sessionId: string): Promise<{ state: string; receipt?: ProofOfTrustReceipt }> {
-    const tenant = this.sessionTenants.get(sessionId)
-    if (!tenant) throw new UnknownSessionError(`unknown verification session '${sessionId}'`)
+    const configId = this.sessionConfigs.get(sessionId)
+    if (!configId) throw new UnknownSessionError(`unknown verification session '${sessionId}'`)
+    const config = this.credentialConfiguration(configId)
 
     const session = await this.verifierApi().getVerificationSessionById(sessionId)
     if (session.state !== 'ResponseVerified') return { state: session.state }
@@ -104,43 +119,44 @@ export class VerifierService {
     const presentations = verified.dcql?.presentations as
       | Record<string, DecodedSdJwtPresentation[]>
       | undefined
-    const presentation = presentations?.['unfold-attestation']?.[0]
+    const presentation = presentations?.[config.id]?.[0]
 
     const claims = presentation?.prettyClaims
     const vct = typeof claims?.vct === 'string' ? claims.vct : null
     const disclosedClaims: Record<string, unknown> = {}
-    if (claims && 'organization' in claims) disclosedClaims.organization = claims.organization
-    if (claims && 'role' in claims) disclosedClaims.role = claims.role
+    for (const name of config.claims) {
+      if (claims && name in claims) disclosedClaims[name] = claims[name]
+    }
 
     const iss = typeof presentation?.payload?.iss === 'string' ? presentation.payload.iss : null
     const issuerCertificate = presentation?.issuer?.method === 'x5c' ? presentation.issuer.x5c[0] : undefined
     const issuerDid = didFromCertificateSan(issuerCertificate)
-
-    const verifierDid = tenant === 'trusted' ? (this.agent.did ?? null) : this.options.rogueVerifierDid
+    const verifierDid = this.agent.did ?? null
 
     const [verifierTrust, issuerTrust] = await Promise.all([
-      this.trustClient.verdictFor('verifier', verifierDid, this.options.vtjscId),
-      this.trustClient.verdictFor('issuer', issuerDid, this.options.vtjscId),
+      this.trustClient.verdictFor('verifier', verifierDid, config.vtjscId),
+      this.trustClient.verdictFor('issuer', issuerDid, config.vtjscId),
     ])
 
     return {
       state: session.state,
       receipt: buildReceipt({
         sessionId,
-        tenant,
+        verifierId: this.verifierId,
         vct,
         disclosedClaims,
         iss,
         verifier: verifierTrust,
         issuer: issuerTrust,
-        vtjscId: this.options.vtjscId,
+        vtjscId: config.vtjscId,
+        registry: this.options.registry,
         verifiedAt: new Date().toISOString(),
       }),
     }
   }
 
   private verifierApi() {
-    const api = (this.agent.modules as Record<string, any>).openId4Vc?.verifier
+    const api = this.agent.modules.openId4Vc.verifier
     if (!api) throw new Error('openId4Vc verifier api not enabled on this agent')
     return api
   }

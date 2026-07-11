@@ -1,3 +1,5 @@
+import type { OpenId4VcCredentialConfiguration } from '../src/types'
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { IssuerService } from '../src/services/IssuerService'
@@ -9,9 +11,17 @@ import { startTestAgent } from './helpers/testAgent'
 
 const ISSUER_DID = 'did:webvh:test:issuer'
 const VERIFIER_DID = 'did:webvh:test:verifier'
-const ROGUE_DID = 'did:web:rogue.example'
-const VCT = 'https://issuer.test/vct/unfold-attestation'
-const VTJSC = 'https://issuer.test/vt/schemas-unfold-attestation-jsc.json'
+const VCT = 'https://issuer.test/vct/org-attestation'
+const VTJSC = 'https://issuer.test/vt/schemas-org-jsc.json'
+const CONFIG_ID = 'org-attestation'
+
+const CREDENTIAL_CONFIGURATION: OpenId4VcCredentialConfiguration = {
+  id: CONFIG_ID,
+  vct: VCT,
+  name: 'Org Attestation',
+  vtjscId: VTJSC,
+  claims: ['organization', 'role'],
+}
 
 describe('full oid4vci to oid4vp flow with verana gate', () => {
   let stub: Awaited<ReturnType<typeof startResolverStub>>
@@ -32,9 +42,7 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
       verifierEnabled: false,
       holderEnabled: false,
       resolverUrl: stub.url,
-      vct: VCT,
-      vtjscId: VTJSC,
-      rogueVerifierDid: ROGUE_DID,
+      credentialConfigurations: [CREDENTIAL_CONFIGURATION],
     }
     ;[issuer, wallet, verifier] = await Promise.all([
       startTestAgent('issuer', { ...base, issuerEnabled: true }),
@@ -55,7 +63,10 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
   })
 
   it('issues an sd-jwt vc into the wallet via pre-authorized code', async () => {
-    const { credentialOffer } = await issuerService.createOffer({ organization: 'ACME', role: 'employee' })
+    const { credentialOffer } = await issuerService.createOffer(CONFIG_ID, {
+      organization: 'ACME',
+      role: 'employee',
+    })
     const stored = await walletService.acceptOffer(credentialOffer)
     expect(stored.claims.organization).toBe('ACME')
     expect(stored.claims.role).toBe('employee')
@@ -63,8 +74,8 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
     expect(credentials).toHaveLength(1)
   }, 60000)
 
-  it('presents to the trusted verifier: verdict TRUSTED_AUTHORIZED, share succeeds, receipt has both verdicts', async () => {
-    const { authorizationRequest, sessionId } = await verifierService.createRequest('trusted')
+  it('presents to a trusted verifier: verdict TRUSTED_AUTHORIZED, share succeeds, receipt has both verdicts', async () => {
+    const { authorizationRequest, sessionId } = await verifierService.createRequest()
     const resolved = await walletService.resolveRequest(authorizationRequest)
     expect(resolved.verdict).toBe('TRUSTED_AUTHORIZED')
     expect(resolved.request.verifierDid).toBe(VERIFIER_DID)
@@ -74,7 +85,7 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
 
     const session = await verifierService.getSession(sessionId)
     expect(session.state).toBe('ResponseVerified')
-    expect(session.receipt?.exchange.tenant).toBe('trusted')
+    expect(session.receipt?.exchange.verifierId).toBe('verifier')
     expect(session.receipt?.verifier.verdict).toBe('TRUSTED_AUTHORIZED')
     expect(session.receipt?.verifier.did).toBe(VERIFIER_DID)
     expect(session.receipt?.issuer.verdict).toBe('TRUSTED_AUTHORIZED')
@@ -84,24 +95,45 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
   }, 60000)
 
   it('single-use gate: a shared gate cannot be replayed', async () => {
-    const { authorizationRequest } = await verifierService.createRequest('trusted')
+    const { authorizationRequest } = await verifierService.createRequest()
     const resolved = await walletService.resolveRequest(authorizationRequest)
     await walletService.share(resolved.gateId)
     await expect(walletService.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
   }, 60000)
 
-  it('blocks sharing with the rogue verifier: verdict UNTRUSTED, share throws', async () => {
-    const { authorizationRequest } = await verifierService.createRequest('rogue')
-    const resolved = await walletService.resolveRequest(authorizationRequest)
+  it('blocks disclosure to an UNTRUSTED verifier (not on the registry)', async () => {
+    const untrustedStub = await startResolverStub({
+      trusted: new Set([ISSUER_DID]),
+      authorized: new Set([ISSUER_DID]),
+    })
+    const gatedWallet = new WalletService(wallet.agent, { ...wallet.options, resolverUrl: untrustedStub.url })
+    const { authorizationRequest } = await verifierService.createRequest()
+    const resolved = await gatedWallet.resolveRequest(authorizationRequest)
     expect(resolved.verdict).toBe('UNTRUSTED')
-    expect(resolved.request.verifierDid).toBe(ROGUE_DID)
-    await expect(walletService.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
+    await expect(gatedWallet.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
+    await untrustedStub.stop()
+  }, 60000)
+
+  it('blocks disclosure to a TRUSTED but NOT-AUTHORIZED verifier', async () => {
+    const unauthorizedStub = await startResolverStub({
+      trusted: new Set([ISSUER_DID, VERIFIER_DID]),
+      authorized: new Set([ISSUER_DID]),
+    })
+    const gatedWallet = new WalletService(wallet.agent, {
+      ...wallet.options,
+      resolverUrl: unauthorizedStub.url,
+    })
+    const { authorizationRequest } = await verifierService.createRequest()
+    const resolved = await gatedWallet.resolveRequest(authorizationRequest)
+    expect(resolved.verdict).toBe('TRUSTED_NOT_AUTHORIZED')
+    await expect(gatedWallet.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
+    await unauthorizedStub.stop()
   }, 60000)
 
   it('fails closed when the resolver is down', async () => {
     const downStub = await startResolverStub({ trusted: new Set(), authorized: new Set(), down: true })
     const isolatedWallet = new WalletService(wallet.agent, { ...wallet.options, resolverUrl: downStub.url })
-    const { authorizationRequest } = await verifierService.createRequest('trusted')
+    const { authorizationRequest } = await verifierService.createRequest()
     const resolved = await isolatedWallet.resolveRequest(authorizationRequest)
     expect(resolved.verdict).toBe('RESOLVER_UNAVAILABLE')
     await expect(isolatedWallet.share(resolved.gateId)).rejects.toBeInstanceOf(GateBlockedError)
@@ -118,7 +150,7 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
       ...verifier.options,
       resolverUrl: cleanStub.url,
     })
-    const { sessionId } = await freshVerifier.createRequest('trusted')
+    const { sessionId } = await freshVerifier.createRequest()
 
     const session = await freshVerifier.getSession(sessionId)
     expect(session.state).not.toBe('ResponseVerified')
@@ -126,34 +158,5 @@ describe('full oid4vci to oid4vp flow with verana gate', () => {
     expect(cleanStub.requestCount).toBe(0)
 
     await cleanStub.stop()
-  }, 60000)
-
-  it('rogue receipt is labeled tenant rogue, binds to the rogue DID, and the verifier judges it UNTRUSTED', async () => {
-    const permissiveStub = await startResolverStub({
-      trusted: new Set([ISSUER_DID, ROGUE_DID]),
-      authorized: new Set([ISSUER_DID, ROGUE_DID]),
-    })
-    const permissiveWallet = new WalletService(wallet.agent, {
-      ...wallet.options,
-      resolverUrl: permissiveStub.url,
-    })
-
-    const { authorizationRequest, sessionId } = await verifierService.createRequest('rogue')
-    const resolved = await permissiveWallet.resolveRequest(authorizationRequest)
-    expect(resolved.verdict).toBe('TRUSTED_AUTHORIZED')
-    expect(resolved.request.verifierDid).toBe(ROGUE_DID)
-
-    const shared = await permissiveWallet.share(resolved.gateId)
-    expect(shared.shared).toBe(true)
-
-    const session = await verifierService.getSession(sessionId)
-    expect(session.state).toBe('ResponseVerified')
-    expect(session.receipt?.exchange.tenant).toBe('rogue')
-    expect(session.receipt?.verifier.did).toBe(ROGUE_DID)
-    expect(session.receipt?.verifier.verdict).toBe('UNTRUSTED')
-    expect(session.receipt?.issuer.did).toBe(ISSUER_DID)
-    expect(session.receipt?.issuer.verdict).toBe('TRUSTED_AUTHORIZED')
-
-    await permissiveStub.stop()
   }, 60000)
 })

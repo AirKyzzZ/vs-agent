@@ -1,53 +1,36 @@
+import type { OpenId4VcPluginOptions } from '../src/types'
+
 import { describe, expect, it } from 'vitest'
 
-import {
-  buildSdJwtPayload,
-  CREDENTIAL_CONFIGURATION_ID,
-  CREDENTIAL_CONFIGURATIONS,
-  DISCLOSURE_FRAME,
-  parseOfferClaims,
-} from '../src/services/IssuerService'
+import { buildSdJwtPayload, resolveIssuerId } from '../src/services/IssuerService'
 
-describe('sd-jwt payload construction', () => {
-  it('builds vct, subject id and claims', () => {
-    const payload = buildSdJwtPayload('https://vct.example/unfold-attestation', {
+describe('buildSdJwtPayload', () => {
+  it('builds vct, a subject id under the vct origin, and spreads the claims', () => {
+    const payload = buildSdJwtPayload('https://issuer.example/vct/org-attestation', {
       organization: 'ACME',
       role: 'employee',
     })
-    expect(payload.vct).toBe('https://vct.example/unfold-attestation')
-    expect(payload.organization).toBe('ACME')
-    expect(payload.role).toBe('employee')
-    expect(String(payload.id)).toMatch(/^https:\/\/vct\.example\/subjects\//)
-  })
-
-  it('selectively discloses organization and role only', () => {
-    expect(DISCLOSURE_FRAME).toEqual({ _sd: ['organization', 'role'] })
-  })
-})
-
-describe('credential configurations', () => {
-  it('defaults to the HAIP dc+sd-jwt profile and keeps vc+sd-jwt as a fallback', () => {
-    expect(CREDENTIAL_CONFIGURATIONS[0]).toEqual({ id: CREDENTIAL_CONFIGURATION_ID, format: 'dc+sd-jwt' })
-    expect(CREDENTIAL_CONFIGURATIONS.map(config => config.format)).toContain('vc+sd-jwt')
-    expect(new Set(CREDENTIAL_CONFIGURATIONS.map(config => config.id)).size).toBe(
-      CREDENTIAL_CONFIGURATIONS.length,
-    )
-  })
-})
-
-describe('parseOfferClaims', () => {
-  it('accepts plain string claims', () => {
-    expect(parseOfferClaims({ organization: 'ACME', role: 'employee' })).toEqual({
+    expect(payload).toMatchObject({
+      vct: 'https://issuer.example/vct/org-attestation',
       organization: 'ACME',
       role: 'employee',
     })
+    expect(String((payload as { id: string }).id)).toMatch(/^https:\/\/issuer\.example\/subjects\//)
   })
-  it('rejects non-string values', () => {
-    expect(() => parseOfferClaims({ organization: { a: 1 }, role: 'r' })).toThrow()
-    expect(() => parseOfferClaims({ organization: 'o', role: ['r'] })).toThrow()
-  })
-  it('rejects empty and oversized values', () => {
-    expect(() => parseOfferClaims({ organization: '  ', role: 'r' })).toThrow()
-    expect(() => parseOfferClaims({ organization: 'o'.repeat(201), role: 'r' })).toThrow()
+})
+
+describe('resolveIssuerId', () => {
+  const base: OpenId4VcPluginOptions = {
+    publicApiBaseUrl: 'https://issuer.example',
+    issuerEnabled: true,
+    verifierEnabled: false,
+    holderEnabled: false,
+    resolverUrl: 'https://resolver.example',
+    credentialConfigurations: [],
+  }
+
+  it('defaults to "issuer" and honors an explicit id', () => {
+    expect(resolveIssuerId(base)).toBe('issuer')
+    expect(resolveIssuerId({ ...base, issuerId: 'org' })).toBe('org')
   })
 })

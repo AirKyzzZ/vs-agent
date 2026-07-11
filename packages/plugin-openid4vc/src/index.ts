@@ -8,20 +8,39 @@ export {
   IssuerService,
   buildCredentialRequestToCredentialMapper,
   buildSdJwtPayload,
-  CREDENTIAL_CONFIGURATION_ID,
-  DISCLOSURE_FRAME,
-  ISSUER_ID,
+  getIssuerSigningJwk,
+  resolveIssuerId,
 } from './services/IssuerService'
 export { VerifierService, UnknownSessionError } from './services/VerifierService'
-export type { Tenant } from './services/VerifierService'
 export { buildReceipt } from './services/receipt'
-export type { ProofOfTrustReceipt, ReceiptInput, PartyResult } from './services/receipt'
-export { WalletService, GateBlockedError } from './services/WalletService'
+export type { ProofOfTrustReceipt, ReceiptInput, ReceiptRegistry, PartyResult } from './services/receipt'
+export {
+  WalletService,
+  GateBlockedError,
+  ShareSubmissionError,
+  extractRequestedVct,
+} from './services/WalletService'
 export { GateStore } from './services/GateStore'
 export type { GateEntry } from './services/GateStore'
 export { ensureP256CertificateWithDidSan, didFromCertificateSan } from './services/AgentSetup'
 export type { CertificateHandle } from './services/AgentSetup'
-export type { OpenId4VcAgentModules, OpenId4VcPluginOptions } from './types'
+export {
+  DEFAULT_SD_JWT_VC_FORMAT,
+  findConfigurationByVct,
+  findCredentialConfiguration,
+  parseOfferClaims,
+  resolveDisclosureFrame,
+  resolveFormat,
+  validateCredentialConfigurations,
+} from './config'
+export type {
+  OpenId4VcAgentModules,
+  OpenId4VcCredentialConfiguration,
+  OpenId4VcCredentialDisplay,
+  OpenId4VcPluginOptions,
+  OpenId4VcRegistryReference,
+  SdJwtVcFormat,
+} from './types'
 export { TrustClient } from './trust/TrustClient'
 export { computeVerdict } from './trust/verdict'
 export type { Verdict, Q1Result, TrustEvidence, TrustVerdict } from './trust/types'

@@ -1,4 +1,5 @@
 import type { TrustEvidence, Verdict } from '../trust/types'
+import type { OpenId4VcRegistryReference } from '../types'
 
 export interface PartyResult {
   verdict: Verdict
@@ -7,14 +8,22 @@ export interface PartyResult {
 
 export interface ReceiptInput {
   sessionId: string
-  tenant: 'trusted' | 'rogue'
+  verifierId: string
   vct: string | null
   disclosedClaims: Record<string, unknown>
   iss: string | null
   verifier: PartyResult
   issuer: PartyResult
   vtjscId: string
+  registry?: OpenId4VcRegistryReference
   verifiedAt: string
+}
+
+export interface ReceiptRegistry {
+  network?: string
+  trustRegistry?: number
+  schema?: number
+  vtjscId: string
 }
 
 export interface ProofOfTrustReceipt {
@@ -23,12 +32,12 @@ export interface ProofOfTrustReceipt {
     vct: string | null
     verifiedAt: string
     sessionId: string
-    tenant: 'trusted' | 'rogue'
+    verifierId: string
   }
   verifier: { did: string | null; verdict: Verdict; evidence: TrustEvidence }
   issuer: { did: string | null; iss: string | null; verdict: Verdict; evidence: TrustEvidence }
   credential: { vct: string | null; disclosedClaims: Record<string, unknown> }
-  registry: { network: 'vna-testnet-1'; trustRegistry: 184; schema: 249; vtjscId: string }
+  registry: ReceiptRegistry
 }
 
 export function buildReceipt(input: ReceiptInput): ProofOfTrustReceipt {
@@ -38,7 +47,7 @@ export function buildReceipt(input: ReceiptInput): ProofOfTrustReceipt {
       vct: input.vct,
       verifiedAt: input.verifiedAt,
       sessionId: input.sessionId,
-      tenant: input.tenant,
+      verifierId: input.verifierId,
     },
     verifier: {
       did: input.verifier.evidence.did,
@@ -52,6 +61,6 @@ export function buildReceipt(input: ReceiptInput): ProofOfTrustReceipt {
       evidence: input.issuer.evidence,
     },
     credential: { vct: input.vct, disclosedClaims: input.disclosedClaims },
-    registry: { network: 'vna-testnet-1', trustRegistry: 184, schema: 249, vtjscId: input.vtjscId },
+    registry: { ...input.registry, vtjscId: input.vtjscId },
   }
 }

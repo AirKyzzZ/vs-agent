@@ -1,10 +1,11 @@
 import type { TrustVerdict, Verdict } from '../trust/types'
-import type { OpenId4VcPluginOptions } from '../types'
+import type { OpenId4VcAgentModules, OpenId4VcPluginOptions } from '../types'
 import type { SdJwtVcRecord } from '@credo-ts/core'
 import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
 import { Kms, X509Certificate } from '@credo-ts/core'
 
+import { findConfigurationByVct } from '../config'
 import { TrustClient } from '../trust/TrustClient'
 
 import { didFromCertificateSan } from './AgentSetup'
@@ -21,17 +22,16 @@ export class GateBlockedError extends Error {
 
 export class ShareSubmissionError extends Error {}
 
-export function evaluateRequestedVcts(
-  credentials: unknown[],
-  expectedVct: string,
-): { requestedVct: string | null; allMatch: boolean } {
-  if (credentials.length === 0) return { requestedVct: null, allMatch: false }
+/** The single vct requested across all DCQL credentials, or null if absent/ambiguous. */
+export function extractRequestedVct(credentials: unknown[]): string | null {
+  if (credentials.length === 0) return null
   const vcts = credentials.map(credential => {
     const meta = (credential as { meta?: { vct_values?: unknown } })?.meta
     const values = Array.isArray(meta?.vct_values) ? meta.vct_values : []
     return values.length === 1 && typeof values[0] === 'string' ? values[0] : null
   })
-  return { requestedVct: vcts[0], allMatch: vcts.every(vct => vct === expectedVct) }
+  const first = vcts[0]
+  return first && vcts.every(vct => vct === first) ? first : null
 }
 
 export class WalletService {
@@ -39,7 +39,7 @@ export class WalletService {
   private readonly trustClient: TrustClient
 
   public constructor(
-    private readonly agent: VsAgent,
+    private readonly agent: VsAgent<OpenId4VcAgentModules>,
     private readonly options: OpenId4VcPluginOptions,
   ) {
     this.trustClient = new TrustClient(options.resolverUrl)
@@ -81,8 +81,11 @@ export class WalletService {
     const resolved = await holder.resolveOpenId4VpAuthorizationRequest(authorizationRequest)
     const verifierDid = this.extractVerifierDid(resolved)
     const credentials = resolved.authorizationRequestPayload.dcql_query?.credentials ?? []
-    const { requestedVct, allMatch } = evaluateRequestedVcts(credentials, this.options.vct)
-    const vtjscId = allMatch ? this.options.vtjscId : null
+    const requestedVct = extractRequestedVct(credentials)
+    const config = requestedVct
+      ? findConfigurationByVct(this.options.credentialConfigurations, requestedVct)
+      : undefined
+    const vtjscId = config?.vtjscId ?? null
     const trust: TrustVerdict = await this.trustClient.verdictFor('verifier', verifierDid, vtjscId)
     const gateId = this.gates.create({ ...trust, resolved })
     return {
@@ -155,7 +158,7 @@ export class WalletService {
   }
 
   private holderApi() {
-    const api = (this.agent.modules as Record<string, any>).openId4Vc?.holder
+    const api = this.agent.modules.openId4Vc.holder
     if (!api) throw new Error('openId4Vc holder api not available')
     return api
   }

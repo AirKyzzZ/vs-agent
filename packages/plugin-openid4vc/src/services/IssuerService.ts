@@ -1,62 +1,65 @@
 import type { CertificateHandle } from './AgentSetup'
-import type { OpenId4VcPluginOptions } from '../types'
+import type {
+  OpenId4VcAgentModules,
+  OpenId4VcCredentialConfiguration,
+  OpenId4VcPluginOptions,
+} from '../types'
 import type { OpenId4VciCredentialRequestToCredentialMapper } from '@credo-ts/openid4vc'
 import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
 import { ClaimFormat, VerificationMethod, utils } from '@credo-ts/core'
 
+import {
+  findCredentialConfiguration,
+  parseOfferClaims,
+  resolveDisclosureFrame,
+  resolveFormat,
+} from '../config'
+
 import { ensureP256CertificateWithDidSan } from './AgentSetup'
 
-export const ISSUER_ID = 'unfold'
-export const CREDENTIAL_CONFIGURATION_ID = 'unfold-attestation'
-export const DISCLOSURE_FRAME = { _sd: ['organization', 'role'] }
-export const CREDENTIAL_CONFIGURATION_DISPLAY = [
-  { name: 'Unfold Attestation', locale: 'en', background_color: '#763EF0', text_color: '#FFFFFF' },
-]
+const DEFAULT_ISSUER_ID = 'issuer'
+const DEFAULT_ISSUER_DISPLAY_NAME = 'Issuer'
 
-// EUDI wallets require dc+sd-jwt; Talao requires vc+sd-jwt (SD-JWT VC media-type rename).
-// Advertise both profiles so any EU wallet can pick the one it supports.
-export const CREDENTIAL_CONFIGURATIONS = [
-  { id: CREDENTIAL_CONFIGURATION_ID, format: 'dc+sd-jwt' },
-  { id: 'unfold-attestation-vc', format: 'vc+sd-jwt' },
-] as const
+export function resolveIssuerId(options: OpenId4VcPluginOptions): string {
+  return options.issuerId ?? DEFAULT_ISSUER_ID
+}
 
-function buildCredentialConfigurationsSupported(vct: string) {
+function toCredentialConfigurationDisplay(config: OpenId4VcCredentialConfiguration) {
+  const display = config.display ?? {}
+  return [
+    {
+      name: display.name ?? config.name,
+      locale: display.locale ?? 'en',
+      ...(display.backgroundColor ? { background_color: display.backgroundColor } : {}),
+      ...(display.textColor ? { text_color: display.textColor } : {}),
+      ...(display.logoUri ? { logo: { uri: display.logoUri } } : {}),
+    },
+  ]
+}
+
+function buildCredentialConfigurationsSupported(configs: OpenId4VcCredentialConfiguration[]) {
   return Object.fromEntries(
-    CREDENTIAL_CONFIGURATIONS.map(({ id, format }) => [
-      id,
+    configs.map(config => [
+      config.id,
       {
-        format,
-        vct,
+        format: resolveFormat(config),
+        vct: config.vct,
         cryptographic_binding_methods_supported: ['jwk'],
         credential_signing_alg_values_supported: ['ES256'],
         proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256'] } },
-        display: CREDENTIAL_CONFIGURATION_DISPLAY,
+        display: toCredentialConfigurationDisplay(config),
       },
     ]),
   )
 }
 
-export function parseOfferClaims(body: unknown): { organization: string; role: string } {
-  const candidate = body as { organization?: unknown; role?: unknown } | null | undefined
-  const organization = candidate?.organization
-  const role = candidate?.role
-  if (typeof organization !== 'string' || !organization.trim() || organization.length > 200) {
-    throw new Error('organization must be a non-empty string of at most 200 characters')
-  }
-  if (typeof role !== 'string' || !role.trim() || role.length > 200) {
-    throw new Error('role must be a non-empty string of at most 200 characters')
-  }
-  return { organization, role }
-}
-
-export function buildSdJwtPayload(vct: string, claims: { organization: string; role: string }) {
+export function buildSdJwtPayload(vct: string, claims: Record<string, string>) {
   const origin = new URL(vct).origin
   return {
     vct,
     id: `${origin}/subjects/${utils.uuid()}`,
-    organization: claims.organization,
-    role: claims.role,
+    ...claims,
   }
 }
 
@@ -65,18 +68,17 @@ let issuerCertificate: CertificateHandle | undefined
 export function buildCredentialRequestToCredentialMapper(
   options: OpenId4VcPluginOptions,
 ): OpenId4VciCredentialRequestToCredentialMapper {
-  return ({ holderBinding, issuanceSession, credentialConfiguration }) => {
+  return ({ holderBinding, issuanceSession, credentialConfigurationId }) => {
     if (!issuerCertificate) throw new Error('issuer certificate not initialized')
+    const config = findCredentialConfiguration(options.credentialConfigurations, credentialConfigurationId)
+    if (!config) throw new Error(`unknown credential configuration '${credentialConfigurationId}'`)
     const certificate = issuerCertificate.certificate
-    const claims = issuanceSession.issuanceMetadata as { organization: string; role: string }
-    const headerType: 'dc+sd-jwt' | 'vc+sd-jwt' =
-      (credentialConfiguration as { format?: 'dc+sd-jwt' | 'vc+sd-jwt' }).format ??
-      CREDENTIAL_CONFIGURATIONS[0].format
+    const claims = issuanceSession.issuanceMetadata as Record<string, string>
     return {
       type: 'credentials',
       format: ClaimFormat.SdJwtDc,
       credentials: holderBinding.keys.map(holderKey => ({
-        payload: buildSdJwtPayload(options.vct, claims),
+        payload: buildSdJwtPayload(config.vct, claims),
         holder:
           holderKey.method === 'did'
             ? { method: 'did' as const, didUrl: holderKey.didUrl }
@@ -86,15 +88,15 @@ export function buildCredentialRequestToCredentialMapper(
           x5c: [certificate],
           issuer: options.publicApiBaseUrl,
         },
-        disclosureFrame: DISCLOSURE_FRAME,
-        headerType,
+        disclosureFrame: { _sd: resolveDisclosureFrame(config) },
+        headerType: resolveFormat(config),
       })),
     }
   }
 }
 
-// SD-JWT VC issuer-key discovery: wallets (Talao, Lissi) require /.well-known/jwt-vc-issuer
-// to validate the issuer signature even when the credential carries an x5c chain.
+// SD-JWT VC issuer-key discovery: wallets require /.well-known/jwt-vc-issuer to validate the
+// issuer signature even when the credential carries an x5c chain.
 export function getIssuerSigningJwk(): Record<string, unknown> | null {
   return issuerCertificate
     ? (issuerCertificate.certificate.publicJwk.toJson() as Record<string, unknown>)
@@ -105,33 +107,38 @@ export class IssuerService {
   private initPromise?: Promise<void>
 
   public constructor(
-    private readonly agent: VsAgent,
+    private readonly agent: VsAgent<OpenId4VcAgentModules>,
     private readonly options: OpenId4VcPluginOptions,
   ) {}
 
   private async initialize(): Promise<void> {
     const host = new URL(this.options.publicApiBaseUrl).hostname
+    const displayName = this.options.issuerDisplayName ?? DEFAULT_ISSUER_DISPLAY_NAME
     issuerCertificate = await ensureP256CertificateWithDidSan(this.agent, {
       genericRecordId: 'oid4vc-issuer-certificate',
-      commonName: 'Unfold Ecosystem Authority',
+      commonName: displayName,
       sanUri: this.agent.did ?? this.options.publicApiBaseUrl,
       sanDns: host,
     })
+    const issuerId = resolveIssuerId(this.options)
+    const credentialConfigurationsSupported = buildCredentialConfigurationsSupported(
+      this.options.credentialConfigurations,
+    )
     const issuerApi = this.issuerApi()
-    const existing = await issuerApi.getIssuerByIssuerId(ISSUER_ID).catch(() => null)
+    const existing = await issuerApi.getIssuerByIssuerId(issuerId).catch(() => null)
     if (!existing) {
       await issuerApi.createIssuer({
-        issuerId: ISSUER_ID,
-        display: [{ name: 'Unfold Ecosystem Authority', locale: 'en' }],
-        credentialConfigurationsSupported: buildCredentialConfigurationsSupported(this.options.vct),
+        issuerId,
+        display: [{ name: displayName, locale: 'en' }],
+        credentialConfigurationsSupported,
       })
     } else {
       await issuerApi.updateIssuerMetadata({
-        issuerId: ISSUER_ID,
+        issuerId,
         display: existing.display,
         credentialConfigurationsSupported: {
           ...existing.credentialConfigurationsSupported,
-          ...buildCredentialConfigurationsSupported(this.options.vct),
+          ...credentialConfigurationsSupported,
         },
       })
     }
@@ -147,13 +154,20 @@ export class IssuerService {
   }
 
   public async createOffer(
-    claims: { organization: string; role: string },
+    credentialConfigurationId: string,
+    rawClaims: unknown,
     opts?: { requireWalletAttestation?: boolean },
   ) {
     await this.ensureInitialized()
+    const config = findCredentialConfiguration(
+      this.options.credentialConfigurations,
+      credentialConfigurationId,
+    )
+    if (!config) throw new Error(`unknown credential configuration '${credentialConfigurationId}'`)
+    const claims = parseOfferClaims(config, rawClaims)
     const { credentialOffer, issuanceSession } = await this.issuerApi().createCredentialOffer({
-      issuerId: ISSUER_ID,
-      credentialConfigurationIds: [CREDENTIAL_CONFIGURATION_ID],
+      issuerId: resolveIssuerId(this.options),
+      credentialConfigurationIds: [config.id],
       preAuthorizedCodeFlowConfig: {},
       issuanceMetadata: claims,
       ...(opts?.requireWalletAttestation
@@ -166,6 +180,23 @@ export class IssuerService {
   public async getOfferState(id: string) {
     const session = await this.issuerApi().getIssuanceSessionById(id)
     return { state: session.state }
+  }
+
+  /** VCT type metadata for the credential configuration served at `<publicApiBaseUrl>/vct/<id>`. */
+  public getVctMetadata(id: string): { vct: string; name: string; description?: string } | undefined {
+    const config = this.options.credentialConfigurations.find(candidate => {
+      try {
+        return new URL(candidate.vct).pathname.split('/').pop() === id
+      } catch {
+        return false
+      }
+    })
+    if (!config) return undefined
+    return {
+      vct: config.vct,
+      name: config.name,
+      ...(config.description ? { description: config.description } : {}),
+    }
   }
 
   private async publishSigningKeyInDidDocument(certificate: CertificateHandle): Promise<void> {
@@ -193,7 +224,7 @@ export class IssuerService {
   }
 
   private issuerApi() {
-    const api = (this.agent.modules as Record<string, any>).openId4Vc?.issuer
+    const api = this.agent.modules.openId4Vc.issuer
     if (!api) throw new Error('openId4Vc issuer api not enabled on this agent')
     return api
   }

@@ -165,9 +165,14 @@ export const OID4VC_VERIFIER_ENABLED = process.env.OID4VC_VERIFIER_ENABLED === '
 export const OID4VC_HOLDER_ENABLED = process.env.OID4VC_HOLDER_ENABLED === 'true'
 export const VERANA_RESOLVER_URL =
   process.env.VERANA_RESOLVER_URL ?? 'https://resolver.testnet.verana.network/v1/trust'
-export const UNFOLD_VCT =
-  process.env.UNFOLD_VCT ?? 'https://unfold-org.77.42.86.24.sslip.io/vct/unfold-attestation'
-export const UNFOLD_VTJSC_ID =
-  process.env.UNFOLD_VTJSC_ID ??
-  'https://unfold-org.77.42.86.24.sslip.io/vt/schemas-unfold-attestation-jsc.json'
-export const ROGUE_VERIFIER_DID = process.env.ROGUE_VERIFIER_DID ?? 'did:web:rogue-verifier.example'
+// JSON array of OpenId4VcCredentialConfiguration; the plugin validates it at boot.
+export const OID4VC_CREDENTIAL_CONFIGURATIONS: unknown[] = process.env.OID4VC_CREDENTIAL_CONFIGURATIONS
+  ? JSON.parse(process.env.OID4VC_CREDENTIAL_CONFIGURATIONS)
+  : []
+export const OID4VC_ISSUER_ID = process.env.OID4VC_ISSUER_ID
+export const OID4VC_VERIFIER_ID = process.env.OID4VC_VERIFIER_ID
+export const OID4VC_ISSUER_DISPLAY_NAME = process.env.OID4VC_ISSUER_DISPLAY_NAME
+export const OID4VC_VERIFIER_DISPLAY_NAME = process.env.OID4VC_VERIFIER_DISPLAY_NAME
+export const OID4VC_REGISTRY = process.env.OID4VC_REGISTRY
+  ? JSON.parse(process.env.OID4VC_REGISTRY)
+  : undefined

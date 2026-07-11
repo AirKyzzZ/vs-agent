@@ -9,24 +9,24 @@ import {
   Post,
 } from '@nestjs/common'
 
-import { UnknownSessionError, VerifierService, type Tenant } from '../services/VerifierService'
+import { UnknownSessionError, VerifierService } from '../services/VerifierService'
 
-function parseTenant(body: unknown): Tenant {
-  const tenant = (body as { tenant?: unknown })?.tenant
-  if (tenant !== 'trusted' && tenant !== 'rogue') {
-    throw new BadRequestException("tenant must be 'trusted' or 'rogue'")
-  }
-  return tenant
-}
-
-@Controller('oid4vc-demo/verifier')
+@Controller('oid4vc/verifier')
 export class VerifierController {
   public constructor(@Inject(VerifierService) private readonly verifierService: VerifierService) {}
 
   @Post('requests')
   public async createRequest(@Body() body: unknown) {
-    const tenant = parseTenant(body)
-    return await this.verifierService.createRequest(tenant)
+    const credentialConfigurationId = (body as { credentialConfigurationId?: unknown })
+      ?.credentialConfigurationId
+    if (credentialConfigurationId !== undefined && typeof credentialConfigurationId !== 'string') {
+      throw new BadRequestException('credentialConfigurationId must be a string')
+    }
+    try {
+      return await this.verifierService.createRequest(credentialConfigurationId)
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'invalid request')
+    }
   }
 
   @Get('sessions/:id')

@@ -23,7 +23,7 @@ function requireString(value: unknown, field: string): string {
   return value
 }
 
-@Controller('oid4vc-demo/wallet')
+@Controller('oid4vc/wallet')
 export class WalletController {
   public constructor(@Inject(WalletService) private readonly walletService: WalletService) {}
 
