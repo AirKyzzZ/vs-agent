@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSdJwtPayload, DISCLOSURE_FRAME, parseOfferClaims } from '../src/services/IssuerService'
+import {
+  buildSdJwtPayload,
+  CREDENTIAL_CONFIGURATION_ID,
+  CREDENTIAL_CONFIGURATIONS,
+  DISCLOSURE_FRAME,
+  parseOfferClaims,
+} from '../src/services/IssuerService'
 
 describe('sd-jwt payload construction', () => {
   it('builds vct, subject id and claims', () => {
@@ -19,9 +25,22 @@ describe('sd-jwt payload construction', () => {
   })
 })
 
+describe('credential configurations', () => {
+  it('defaults to the HAIP dc+sd-jwt profile and keeps vc+sd-jwt as a fallback', () => {
+    expect(CREDENTIAL_CONFIGURATIONS[0]).toEqual({ id: CREDENTIAL_CONFIGURATION_ID, format: 'dc+sd-jwt' })
+    expect(CREDENTIAL_CONFIGURATIONS.map(config => config.format)).toContain('vc+sd-jwt')
+    expect(new Set(CREDENTIAL_CONFIGURATIONS.map(config => config.id)).size).toBe(
+      CREDENTIAL_CONFIGURATIONS.length,
+    )
+  })
+})
+
 describe('parseOfferClaims', () => {
   it('accepts plain string claims', () => {
-    expect(parseOfferClaims({ organization: 'ACME', role: 'employee' })).toEqual({ organization: 'ACME', role: 'employee' })
+    expect(parseOfferClaims({ organization: 'ACME', role: 'employee' })).toEqual({
+      organization: 'ACME',
+      role: 'employee',
+    })
   })
   it('rejects non-string values', () => {
     expect(() => parseOfferClaims({ organization: { a: 1 }, role: 'r' })).toThrow()

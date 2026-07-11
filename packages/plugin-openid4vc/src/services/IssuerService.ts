@@ -13,7 +13,29 @@ export const DISCLOSURE_FRAME = { _sd: ['organization', 'role'] }
 export const CREDENTIAL_CONFIGURATION_DISPLAY = [
   { name: 'Unfold Attestation', locale: 'en', background_color: '#763EF0', text_color: '#FFFFFF' },
 ]
-export const CREDENTIAL_FORMAT = 'vc+sd-jwt' as const
+
+// EUDI wallets require dc+sd-jwt; Talao requires vc+sd-jwt (SD-JWT VC media-type rename).
+// Advertise both profiles so any EU wallet can pick the one it supports.
+export const CREDENTIAL_CONFIGURATIONS = [
+  { id: CREDENTIAL_CONFIGURATION_ID, format: 'dc+sd-jwt' },
+  { id: 'unfold-attestation-vc', format: 'vc+sd-jwt' },
+] as const
+
+function buildCredentialConfigurationsSupported(vct: string) {
+  return Object.fromEntries(
+    CREDENTIAL_CONFIGURATIONS.map(({ id, format }) => [
+      id,
+      {
+        format,
+        vct,
+        cryptographic_binding_methods_supported: ['jwk'],
+        credential_signing_alg_values_supported: ['ES256'],
+        proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256'] } },
+        display: CREDENTIAL_CONFIGURATION_DISPLAY,
+      },
+    ]),
+  )
+}
 
 export function parseOfferClaims(body: unknown): { organization: string; role: string } {
   const candidate = body as { organization?: unknown; role?: unknown } | null | undefined
@@ -43,10 +65,13 @@ let issuerCertificate: CertificateHandle | undefined
 export function buildCredentialRequestToCredentialMapper(
   options: OpenId4VcPluginOptions,
 ): OpenId4VciCredentialRequestToCredentialMapper {
-  return ({ holderBinding, issuanceSession }) => {
+  return ({ holderBinding, issuanceSession, credentialConfiguration }) => {
     if (!issuerCertificate) throw new Error('issuer certificate not initialized')
     const certificate = issuerCertificate.certificate
     const claims = issuanceSession.issuanceMetadata as { organization: string; role: string }
+    const headerType: 'dc+sd-jwt' | 'vc+sd-jwt' =
+      (credentialConfiguration as { format?: 'dc+sd-jwt' | 'vc+sd-jwt' }).format ??
+      CREDENTIAL_CONFIGURATIONS[0].format
     return {
       type: 'credentials',
       format: ClaimFormat.SdJwtDc,
@@ -62,10 +87,18 @@ export function buildCredentialRequestToCredentialMapper(
           issuer: options.publicApiBaseUrl,
         },
         disclosureFrame: DISCLOSURE_FRAME,
-        headerType: CREDENTIAL_FORMAT,
+        headerType,
       })),
     }
   }
+}
+
+// SD-JWT VC issuer-key discovery: wallets (Talao, Lissi) require /.well-known/jwt-vc-issuer
+// to validate the issuer signature even when the credential carries an x5c chain.
+export function getIssuerSigningJwk(): Record<string, unknown> | null {
+  return issuerCertificate
+    ? (issuerCertificate.certificate.publicJwk.toJson() as Record<string, unknown>)
+    : null
 }
 
 export class IssuerService {
@@ -90,16 +123,7 @@ export class IssuerService {
       await issuerApi.createIssuer({
         issuerId: ISSUER_ID,
         display: [{ name: 'Unfold Ecosystem Authority', locale: 'en' }],
-        credentialConfigurationsSupported: {
-          [CREDENTIAL_CONFIGURATION_ID]: {
-            format: CREDENTIAL_FORMAT,
-            vct: this.options.vct,
-            cryptographic_binding_methods_supported: ['jwk'],
-            credential_signing_alg_values_supported: ['ES256'],
-            proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256'] } },
-            display: CREDENTIAL_CONFIGURATION_DISPLAY,
-          },
-        },
+        credentialConfigurationsSupported: buildCredentialConfigurationsSupported(this.options.vct),
       })
     } else {
       await issuerApi.updateIssuerMetadata({
@@ -107,11 +131,7 @@ export class IssuerService {
         display: existing.display,
         credentialConfigurationsSupported: {
           ...existing.credentialConfigurationsSupported,
-          [CREDENTIAL_CONFIGURATION_ID]: {
-            ...existing.credentialConfigurationsSupported[CREDENTIAL_CONFIGURATION_ID],
-            format: CREDENTIAL_FORMAT,
-            display: CREDENTIAL_CONFIGURATION_DISPLAY,
-          },
+          ...buildCredentialConfigurationsSupported(this.options.vct),
         },
       })
     }
