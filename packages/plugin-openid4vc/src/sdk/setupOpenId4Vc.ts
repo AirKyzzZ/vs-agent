@@ -4,7 +4,11 @@ import { X509Module } from '@credo-ts/core'
 import { OpenId4VcModule, type OpenId4VcModuleConfigOptions } from '@credo-ts/openid4vc'
 import express, { type Express, type NextFunction, type Request, type Response } from 'express'
 
-import { buildCredentialRequestToCredentialMapper, getIssuerSigningJwk } from '../services/IssuerService'
+import {
+  buildCredentialRequestToCredentialMapper,
+  getIssuerSigningJwk,
+  getStatusListToken,
+} from '../services/IssuerService'
 
 let app: Express | undefined
 
@@ -70,6 +74,16 @@ export function setupOpenId4Vc(
         return
       }
       res.json({ issuer: options.publicApiBaseUrl, jwks: { keys: [jwk] } })
+    })
+    // Token Status List endpoint: verifiers fetch the signed status list token referenced by a
+    // credential's `status.status_list.uri` to check revocation. Only live when revocation is enabled.
+    app.get('/oid4vc/status-list/:id', (req: Request, res: Response) => {
+      const token = getStatusListToken(req.params.id)
+      if (!token) {
+        res.status(404).json({ error: 'unknown status list' })
+        return
+      }
+      res.type('application/statuslist+jwt').send(token)
     })
     config.issuer = {
       baseUrl: `${options.publicApiBaseUrl}/oid4vci`,

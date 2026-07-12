@@ -17,6 +17,8 @@ export interface ReceiptInput {
   vtjscId: string
   registry?: OpenId4VcRegistryReference
   verifiedAt: string
+  /** 'valid' when the presented credential carried a status reference and passed the revocation check */
+  credentialStatus?: 'valid'
 }
 
 export interface ReceiptRegistry {
@@ -36,7 +38,11 @@ export interface ProofOfTrustReceipt {
   }
   verifier: { did: string | null; verdict: Verdict; evidence: TrustEvidence }
   issuer: { did: string | null; iss: string | null; verdict: Verdict; evidence: TrustEvidence }
-  credential: { vct: string | null; disclosedClaims: Record<string, unknown> }
+  credential: {
+    vct: string | null
+    disclosedClaims: Record<string, unknown>
+    credentialStatus?: 'valid'
+  }
   registry: ReceiptRegistry
 }
 
@@ -60,7 +66,11 @@ export function buildReceipt(input: ReceiptInput): ProofOfTrustReceipt {
       verdict: input.issuer.verdict,
       evidence: input.issuer.evidence,
     },
-    credential: { vct: input.vct, disclosedClaims: input.disclosedClaims },
+    credential: {
+      vct: input.vct,
+      disclosedClaims: input.disclosedClaims,
+      ...(input.credentialStatus ? { credentialStatus: input.credentialStatus } : {}),
+    },
     registry: { ...input.registry, vtjscId: input.vtjscId },
   }
 }

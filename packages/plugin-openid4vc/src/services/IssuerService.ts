@@ -1,4 +1,5 @@
 import type { CertificateHandle } from './AgentSetup'
+import type { StatusReference } from './StatusListService'
 import type {
   OpenId4VcAgentModules,
   OpenId4VcCredentialConfiguration,
@@ -18,6 +19,7 @@ import {
 } from '../config'
 
 import { ensureP256CertificateWithDidSan } from './AgentSetup'
+import { StatusListService } from './StatusListService'
 
 const DEFAULT_ISSUER_ID = 'issuer'
 const DEFAULT_ISSUER_DISPLAY_NAME = 'Issuer'
@@ -55,31 +57,35 @@ function buildCredentialConfigurationsSupported(configs: OpenId4VcCredentialConf
   )
 }
 
-export function buildSdJwtPayload(vct: string, claims: Record<string, string>) {
+export function buildSdJwtPayload(vct: string, claims: Record<string, string>, status?: StatusReference) {
   const origin = new URL(vct).origin
   return {
     vct,
     id: `${origin}/subjects/${utils.uuid()}`,
     ...claims,
+    ...(status ? { status } : {}),
   }
 }
 
 let issuerCertificate: CertificateHandle | undefined
+let statusListService: StatusListService | undefined
 
 export function buildCredentialRequestToCredentialMapper(
   options: OpenId4VcPluginOptions,
 ): OpenId4VciCredentialRequestToCredentialMapper {
-  return ({ holderBinding, issuanceSession, credentialConfigurationId }) => {
+  return async ({ holderBinding, issuanceSession, credentialConfigurationId }) => {
     if (!issuerCertificate) throw new Error('issuer certificate not initialized')
     const config = findCredentialConfiguration(options.credentialConfigurations, credentialConfigurationId)
     if (!config) throw new Error(`unknown credential configuration '${credentialConfigurationId}'`)
     const certificate = issuerCertificate.certificate
     const claims = issuanceSession.issuanceMetadata as Record<string, string>
-    return {
-      type: 'credentials',
-      format: ClaimFormat.SdJwtDc,
-      credentials: holderBinding.keys.map(holderKey => ({
-        payload: buildSdJwtPayload(config.vct, claims),
+    const credentials = await Promise.all(
+      holderBinding.keys.map(async holderKey => ({
+        payload: buildSdJwtPayload(
+          config.vct,
+          claims,
+          statusListService ? await statusListService.allocate(issuanceSession.id) : undefined,
+        ),
         holder:
           holderKey.method === 'did'
             ? { method: 'did' as const, didUrl: holderKey.didUrl }
@@ -92,7 +98,8 @@ export function buildCredentialRequestToCredentialMapper(
         disclosureFrame: { _sd: resolveDisclosureFrame(config) },
         headerType: resolveFormat(config),
       })),
-    }
+    )
+    return { type: 'credentials', format: ClaimFormat.SdJwtDc, credentials }
   }
 }
 
@@ -102,6 +109,11 @@ export function getIssuerSigningJwk(): Record<string, unknown> | null {
   return issuerCertificate
     ? (issuerCertificate.certificate.publicJwk.toJson() as Record<string, unknown>)
     : null
+}
+
+/** The signed status list token for `listId`, served at `<publicApiBaseUrl>/oid4vc/status-list/:id`. */
+export function getStatusListToken(listId: string): string | undefined {
+  return statusListService?.getToken(listId)
 }
 
 export class IssuerService {
@@ -144,6 +156,16 @@ export class IssuerService {
       })
     }
     await this.publishSigningKeyInDidDocument(issuerCertificate)
+
+    if (this.options.revocation?.enabled) {
+      statusListService = new StatusListService(
+        this.agent,
+        issuerCertificate,
+        this.options.publicApiBaseUrl,
+        this.options.revocation.size,
+      )
+      await statusListService.initialize()
+    }
   }
 
   public ensureInitialized(): Promise<void> {
@@ -181,6 +203,16 @@ export class IssuerService {
   public async getOfferState(id: string) {
     const session = await this.issuerApi().getIssuanceSessionById(id)
     return { state: session.state }
+  }
+
+  /**
+   * Revoke every credential issued for an issuance session by flipping its Token Status List entry.
+   * Requires `revocation.enabled`. Returns the affected indices; idempotent.
+   */
+  public async revoke(issuanceSessionId: string): Promise<number[]> {
+    await this.ensureInitialized()
+    if (!statusListService) throw new Error('revocation is not enabled for this issuer')
+    return statusListService.revoke(issuanceSessionId)
   }
 
   /** SD-JWT VC Type Metadata for the credential configuration served at `<publicApiBaseUrl>/vct/<id>`. */

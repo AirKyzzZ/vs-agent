@@ -129,6 +129,11 @@ export class VerifierService {
       if (claims && name in claims) disclosedClaims[name] = claims[name]
     }
 
+    // Reaching ResponseVerified means Credo's fail-closed status check already passed, so a
+    // credential that carried a status reference is confirmed not-revoked. A revoked credential
+    // fails verification upstream and never produces a receipt.
+    const carriesStatus = !!claims && typeof claims.status === 'object' && claims.status !== null
+
     const iss = typeof presentation?.payload?.iss === 'string' ? presentation.payload.iss : null
     const issuerCertificate = presentation?.issuer?.method === 'x5c' ? presentation.issuer.x5c[0] : undefined
     const issuerDid = didFromCertificateSan(issuerCertificate)
@@ -162,6 +167,7 @@ export class VerifierService {
         vtjscId: config.vtjscId,
         registry: this.options.registry,
         verifiedAt: new Date().toISOString(),
+        ...(carriesStatus ? { credentialStatus: 'valid' as const } : {}),
       }),
     }
   }

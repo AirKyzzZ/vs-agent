@@ -17,6 +17,20 @@ describe('buildSdJwtPayload', () => {
     })
     expect(String((payload as { id: string }).id)).toMatch(/^https:\/\/issuer\.example\/subjects\//)
   })
+
+  it('includes a status reference only when one is provided', () => {
+    const withStatus = buildSdJwtPayload(
+      'https://issuer.example/vct/org-attestation',
+      { organization: 'ACME' },
+      { status_list: { idx: 7, uri: 'https://issuer.example/oid4vc/status-list/abc' } },
+    )
+    expect(withStatus).toMatchObject({
+      status: { status_list: { idx: 7, uri: 'https://issuer.example/oid4vc/status-list/abc' } },
+    })
+
+    const withoutStatus = buildSdJwtPayload('https://issuer.example/vct/x', { a: 'b' })
+    expect('status' in withoutStatus).toBe(false)
+  })
 })
 
 describe('resolveIssuerId', () => {

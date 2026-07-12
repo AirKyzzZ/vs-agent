@@ -51,6 +51,13 @@ export interface OpenId4VcRegistryReference {
   schema: number
 }
 
+/** Token Status List revocation (draft-ietf-oauth-status-list). Opt-in; off preserves current behavior. */
+export interface OpenId4VcRevocationOptions {
+  enabled: boolean
+  /** number of entries in the status list; default 131072 */
+  size?: number
+}
+
 export interface OpenId4VcPluginOptions {
   /** this agent's public base URL (issuer identifier, cert SAN) */
   publicApiBaseUrl: string
@@ -71,4 +78,6 @@ export interface OpenId4VcPluginOptions {
   verifierDisplayName?: string
   /** registry coordinates for the receipt; if omitted, derived from the resolver evidence */
   registry?: OpenId4VcRegistryReference
+  /** Token Status List revocation; if omitted or disabled, issued credentials carry no status */
+  revocation?: OpenId4VcRevocationOptions
 }

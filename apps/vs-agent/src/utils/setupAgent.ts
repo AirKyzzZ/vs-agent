@@ -30,6 +30,8 @@ import {
   OID4VC_ISSUER_DISPLAY_NAME,
   OID4VC_VERIFIER_DISPLAY_NAME,
   OID4VC_REGISTRY,
+  OID4VC_REVOCATION_ENABLED,
+  OID4VC_REVOCATION_SIZE,
   VERANA_CHAIN_ID,
   VERANA_INDEXER_BASE_URL,
   VERANA_RESOLVER_URL,
@@ -143,6 +145,14 @@ export const setupAgent = async ({
               ...(OID4VC_ISSUER_DISPLAY_NAME ? { issuerDisplayName: OID4VC_ISSUER_DISPLAY_NAME } : {}),
               ...(OID4VC_VERIFIER_DISPLAY_NAME ? { verifierDisplayName: OID4VC_VERIFIER_DISPLAY_NAME } : {}),
               ...(OID4VC_REGISTRY ? { registry: OID4VC_REGISTRY } : {}),
+              ...(OID4VC_REVOCATION_ENABLED
+                ? {
+                    revocation: {
+                      enabled: true,
+                      ...(OID4VC_REVOCATION_SIZE ? { size: OID4VC_REVOCATION_SIZE } : {}),
+                    },
+                  }
+                : {}),
             }),
           ]
         : []),

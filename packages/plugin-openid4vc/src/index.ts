@@ -9,8 +9,11 @@ export {
   buildCredentialRequestToCredentialMapper,
   buildSdJwtPayload,
   getIssuerSigningJwk,
+  getStatusListToken,
   resolveIssuerId,
 } from './services/IssuerService'
+export { StatusListService } from './services/StatusListService'
+export type { StatusReference } from './services/StatusListService'
 export { VerifierService, UnknownSessionError } from './services/VerifierService'
 export { buildReceipt } from './services/receipt'
 export type { ProofOfTrustReceipt, ReceiptInput, ReceiptRegistry, PartyResult } from './services/receipt'
@@ -40,6 +43,7 @@ export type {
   OpenId4VcCredentialDisplay,
   OpenId4VcPluginOptions,
   OpenId4VcRegistryReference,
+  OpenId4VcRevocationOptions,
   SdJwtVcFormat,
 } from './types'
 export { TrustClient } from './trust/TrustClient'

@@ -176,3 +176,7 @@ export const OID4VC_VERIFIER_DISPLAY_NAME = process.env.OID4VC_VERIFIER_DISPLAY_
 export const OID4VC_REGISTRY = process.env.OID4VC_REGISTRY
   ? JSON.parse(process.env.OID4VC_REGISTRY)
   : undefined
+export const OID4VC_REVOCATION_ENABLED = process.env.OID4VC_REVOCATION_ENABLED === 'true'
+export const OID4VC_REVOCATION_SIZE = process.env.OID4VC_REVOCATION_SIZE
+  ? Number(process.env.OID4VC_REVOCATION_SIZE)
+  : undefined
