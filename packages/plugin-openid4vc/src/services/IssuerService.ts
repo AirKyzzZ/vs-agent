@@ -77,7 +77,7 @@ export function buildCredentialRequestToCredentialMapper(
     if (!issuerCertificate) throw new Error('issuer certificate not initialized')
     const config = findCredentialConfiguration(options.credentialConfigurations, credentialConfigurationId)
     if (!config) throw new Error(`unknown credential configuration '${credentialConfigurationId}'`)
-    const certificate = issuerCertificate.certificate
+    const x5c = issuerCertificate.chain
     const claims = issuanceSession.issuanceMetadata as Record<string, string>
     const credentials = await Promise.all(
       holderBinding.keys.map(async holderKey => ({
@@ -92,7 +92,7 @@ export function buildCredentialRequestToCredentialMapper(
             : { method: 'jwk' as const, jwk: holderKey.jwk },
         issuer: {
           method: 'x5c' as const,
-          x5c: [certificate],
+          x5c,
           issuer: options.publicApiBaseUrl,
         },
         disclosureFrame: { _sd: resolveDisclosureFrame(config) },
@@ -132,6 +132,7 @@ export class IssuerService {
       commonName: displayName,
       sanUri: this.agent.did ?? this.options.publicApiBaseUrl,
       sanDns: host,
+      useCertificateChain: this.options.certificateChain?.enabled,
     })
     const issuerId = resolveIssuerId(this.options)
     const credentialConfigurationsSupported = buildCredentialConfigurationsSupported(

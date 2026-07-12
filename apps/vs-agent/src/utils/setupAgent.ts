@@ -32,6 +32,7 @@ import {
   OID4VC_REGISTRY,
   OID4VC_REVOCATION_ENABLED,
   OID4VC_REVOCATION_SIZE,
+  OID4VC_CERTIFICATE_CHAIN_ENABLED,
   VERANA_CHAIN_ID,
   VERANA_INDEXER_BASE_URL,
   VERANA_RESOLVER_URL,
@@ -153,6 +154,7 @@ export const setupAgent = async ({
                     },
                   }
                 : {}),
+              ...(OID4VC_CERTIFICATE_CHAIN_ENABLED ? { certificateChain: { enabled: true } } : {}),
             }),
           ]
         : []),

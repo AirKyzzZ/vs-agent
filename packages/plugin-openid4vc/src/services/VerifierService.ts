@@ -52,6 +52,7 @@ export class VerifierService {
       commonName: this.displayName,
       sanUri: this.agent.did ?? this.options.publicApiBaseUrl,
       sanDns: host,
+      useCertificateChain: this.options.certificateChain?.enabled,
     })
     const verifierApi = this.verifierApi()
     const existing = await verifierApi.getVerifierByVerifierId(this.verifierId).catch(() => null)
@@ -88,7 +89,7 @@ export class VerifierService {
     const { authorizationRequest, verificationSession } = await this.verifierApi().createAuthorizationRequest(
       {
         verifierId: this.verifierId,
-        requestSigner: { method: 'x5c', x5c: [this.certificate.certificate], clientIdPrefix: 'x509_hash' },
+        requestSigner: { method: 'x5c', x5c: this.certificate.chain, clientIdPrefix: 'x509_hash' },
         responseMode: 'direct_post.jwt',
         dcql: {
           query: {

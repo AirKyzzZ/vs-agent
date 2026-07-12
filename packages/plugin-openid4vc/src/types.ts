@@ -80,4 +80,10 @@ export interface OpenId4VcPluginOptions {
   registry?: OpenId4VcRegistryReference
   /** Token Status List revocation; if omitted or disabled, issued credentials carry no status */
   revocation?: OpenId4VcRevocationOptions
+  /**
+   * Issue the issuer/verifier signing certs from an internal root CA (non-self-signed leaf, HAIP §5.1)
+   * instead of a self-signed cert. Opt-in; default self-signed. Changes the x5c wallets see, so
+   * re-validate wallet interop before enabling in production.
+   */
+  certificateChain?: { enabled: boolean }
 }

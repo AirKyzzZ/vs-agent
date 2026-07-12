@@ -139,7 +139,7 @@ export class StatusListService {
   }
 
   private signer() {
-    return { method: 'x5c' as const, x5c: [this.certificate.certificate] }
+    return { method: 'x5c' as const, x5c: this.certificate.chain }
   }
 
   private requireState(): StatusListState {
