@@ -8,7 +8,7 @@ import type {
 import type { OpenId4VciCredentialRequestToCredentialMapper } from '@credo-ts/openid4vc'
 import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
-import { ClaimFormat, VerificationMethod, utils } from '@credo-ts/core'
+import { ClaimFormat, utils } from '@credo-ts/core'
 
 import {
   buildVctTypeMetadata,
@@ -18,7 +18,7 @@ import {
   resolveFormat,
 } from '../config'
 
-import { ensureP256CertificateWithDidSan } from './AgentSetup'
+import { ensureP256CertificateWithDidSan, publishSigningKeyInDidDocument } from './AgentSetup'
 import { StatusListService } from './StatusListService'
 
 const DEFAULT_ISSUER_ID = 'issuer'
@@ -156,7 +156,7 @@ export class IssuerService {
         },
       })
     }
-    await this.publishSigningKeyInDidDocument(issuerCertificate)
+    await publishSigningKeyInDidDocument(this.agent, issuerCertificate, ['assertionMethod'])
 
     if (this.options.revocation?.enabled) {
       statusListService = new StatusListService(
@@ -226,30 +226,6 @@ export class IssuerService {
       }
     })
     return config ? buildVctTypeMetadata(config) : undefined
-  }
-
-  private async publishSigningKeyInDidDocument(certificate: CertificateHandle): Promise<void> {
-    if (!this.agent.did) return
-    try {
-      const [didRecord] = await this.agent.dids.getCreatedDids({ did: this.agent.did })
-      const didDocument = didRecord?.didDocument
-      if (!didDocument) return
-      const methodId = `${this.agent.did}#oid4vc-es256`
-      if (didDocument.verificationMethod?.some(vm => vm.id === methodId)) return
-      didDocument.verificationMethod = [
-        ...(didDocument.verificationMethod ?? []),
-        new VerificationMethod({
-          id: methodId,
-          type: 'JsonWebKey2020',
-          controller: this.agent.did,
-          publicKeyJwk: certificate.certificate.publicJwk.toJson(),
-        }),
-      ]
-      didDocument.assertionMethod = [...(didDocument.assertionMethod ?? []), methodId]
-      await this.agent.dids.update({ did: this.agent.did, didDocument })
-    } catch (error) {
-      this.agent.config.logger.warn(`could not publish ES256 key in DID document: ${error}`)
-    }
   }
 
   private issuerApi() {

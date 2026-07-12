@@ -10,7 +10,12 @@ import { findCredentialConfiguration, resolveFormat } from '../config'
 import { TrustClient } from '../trust/TrustClient'
 import { blockingBindingVerdict, verifyKeyBoundToDid } from '../trust/keyBinding'
 
-import { type CertificateHandle, didFromCertificateSan, ensureP256CertificateWithDidSan } from './AgentSetup'
+import {
+  type CertificateHandle,
+  didFromCertificateSan,
+  ensureP256CertificateWithDidSan,
+  publishSigningKeyInDidDocument,
+} from './AgentSetup'
 import { buildReceipt, type ProofOfTrustReceipt } from './receipt'
 
 const DEFAULT_VERIFIER_ID = 'verifier'
@@ -62,6 +67,7 @@ export class VerifierService {
         clientMetadata: { client_name: this.displayName },
       })
     }
+    await publishSigningKeyInDidDocument(this.agent, this.certificate, ['authentication', 'assertionMethod'])
   }
 
   public ensureInitialized(): Promise<void> {

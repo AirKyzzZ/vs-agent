@@ -1,6 +1,6 @@
 import type { VsAgent } from '@verana-labs/vs-agent-sdk'
 
-import { Kms, X509Certificate, X509KeyUsage } from '@credo-ts/core'
+import { Kms, VerificationMethod, X509Certificate, X509KeyUsage } from '@credo-ts/core'
 
 export interface CertificateHandle {
   /** the signing (leaf) certificate; its key signs credentials, OID4VP requests and status lists */
@@ -21,6 +21,46 @@ const FIVE_YEARS_MS = 5 * 365 * 24 * 3600 * 1000
 
 export function didFromCertificateSan(certificate: X509Certificate | undefined): string | null {
   return certificate?.sanUriNames.find(uri => uri.startsWith('did:')) ?? null
+}
+
+/**
+ * Publish the P-256 signing key of `certificate` into this agent's DID document under the given
+ * verification relationships, so a peer can authenticate the DID→key binding (the fail-closed trust
+ * gate resolves the DID and requires the signing key to be present). Issuers publish it as
+ * `assertionMethod`; verifiers, whose request key authenticates them, publish it as `authentication`
+ * too. Idempotent and best-effort: a resolvable DID that never gains the key simply fails closed.
+ */
+export async function publishSigningKeyInDidDocument(
+  agent: VsAgent,
+  certificate: CertificateHandle,
+  relationships: Array<'authentication' | 'assertionMethod'>,
+): Promise<void> {
+  if (!agent.did) return
+  try {
+    const [didRecord] = await agent.dids.getCreatedDids({ did: agent.did })
+    const didDocument = didRecord?.didDocument
+    if (!didDocument) return
+    const methodId = `${agent.did}#oid4vc-es256`
+    if (didDocument.verificationMethod?.some(vm => vm.id === methodId)) return
+    didDocument.verificationMethod = [
+      ...(didDocument.verificationMethod ?? []),
+      new VerificationMethod({
+        id: methodId,
+        type: 'JsonWebKey2020',
+        controller: agent.did,
+        publicKeyJwk: certificate.certificate.publicJwk.toJson(),
+      }),
+    ]
+    if (relationships.includes('assertionMethod')) {
+      didDocument.assertionMethod = [...(didDocument.assertionMethod ?? []), methodId]
+    }
+    if (relationships.includes('authentication')) {
+      didDocument.authentication = [...(didDocument.authentication ?? []), methodId]
+    }
+    await agent.dids.update({ did: agent.did, didDocument })
+  } catch (error) {
+    agent.config.logger.warn(`could not publish ES256 signing key in DID document: ${error}`)
+  }
 }
 
 /**
