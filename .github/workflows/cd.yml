@@ -74,12 +74,12 @@ jobs:
               echo "release-patch=${RELEASE_PATCH}"
               echo "is-main=${IS_MAIN}"
               echo "npm-dist-tag="
-            } >> "$GITHUB_OUTPUT"
+            } | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
 
           if [ -z "$MANUAL_VERSION" ]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "publish=false" | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -108,13 +108,15 @@ jobs:
             echo "release-patch=$(printf '%s' "$BASE" | cut -d. -f3)"
             echo "is-main=false"
             echo "npm-dist-tag=${DIST_TAG}"
-          } >> "$GITHUB_OUTPUT"
+          } | tee -a "$GITHUB_OUTPUT"
 
           echo "Manual publish of \`${MANUAL_VERSION}\` from \`${REF_NAME}\` (npm dist-tag \`${DIST_TAG}\`)." >> "$GITHUB_STEP_SUMMARY"
 
   docker:
     needs: version
-    if: needs.version.outputs.publish == 'true'
+    # !cancelled() keeps the skipped resolve-version (dispatch runs) from propagating a skip
+    # through the version job down to here.
+    if: ${{ !cancelled() && needs.version.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -254,7 +256,7 @@ jobs:
 
   npm-publish:
     needs: [version]
-    if: needs.version.outputs.publish == 'true'
+    if: ${{ !cancelled() && needs.version.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     env:
       RELEASE_TYPE: ${{ needs.version.outputs.release-type }}
