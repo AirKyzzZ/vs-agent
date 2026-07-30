@@ -11,7 +11,7 @@ import { ClaimFormat, RecordNotFoundError } from '@credo-ts/core'
 
 import { findCredentialConfiguration, parseOfferClaims } from '../config'
 import { StatusListService } from './StatusListService'
-import { ownDidResolutionPolicy, verifyKeyBoundToDid } from '../trust/keyBinding'
+import { findBoundVerificationMethodId, ownDidResolutionPolicy, verifyKeyBoundToDid } from '../trust/keyBinding'
 
 import {
   didFromValidatedCertificate,
@@ -235,6 +235,35 @@ export class IssuerService {
     return this.statusListService.revoke(issuanceSessionId)
   }
 
+  private async buildMetadataSigner(signingCertificate: SigningCertificateHandle) {
+    if (this.issuerOptions().metadataSigner === 'did') {
+      const did = this.agent.did ?? null
+      const didUrl = await findBoundVerificationMethodId(
+        this.agent,
+        did,
+        signingCertificate.certificate.publicJwk.toJson(),
+        ['assertionMethod'],
+        ownDidResolutionPolicy(did ?? ''),
+      )
+      if (!didUrl) {
+        throw new Error(
+          'OpenID4VC issuer is configured to sign metadata with its DID, but the DID does not publish the signing key for assertionMethod',
+        )
+      }
+      return { method: 'did' as const, didUrl }
+    }
+
+    return {
+      method: 'x5c' as const,
+      x5c: signingCertificate.development
+        ? signingCertificate.chain
+        : signingCertificate.chain.filter(
+            (certificate, index, chain) =>
+              index !== chain.length - 1 || certificate.subject !== certificate.issuer,
+          ),
+    }
+  }
+
   private async createOrUpdateIssuer(signingCertificate: SigningCertificateHandle): Promise<void> {
     const issuer = this.issuerOptions()
     const issuerId = issuer.id
@@ -250,15 +279,7 @@ export class IssuerService {
       if (!(error instanceof RecordNotFoundError)) throw error
       await this.issuerApi().createIssuer({
         ...metadata,
-        metadataSigner: {
-          method: 'x5c' as const,
-          x5c: signingCertificate.development
-            ? signingCertificate.chain
-            : signingCertificate.chain.filter(
-                (certificate, index, chain) =>
-                  index !== chain.length - 1 || certificate.subject !== certificate.issuer,
-              ),
-        },
+        metadataSigner: await this.buildMetadataSigner(signingCertificate),
       })
       return
     }

@@ -35,6 +35,13 @@ export interface OpenId4VcPluginOptions {
     signing: OpenId4VcSigningOptions
     requireWalletAttestation?: boolean
     walletAttestationCertificates?: string[]
+    /**
+     * How the issuer signs its credential issuer metadata. `x5c` (the default) signs with the
+     * certificate chain; `did` signs with the issuer's DID, which is what lets a wallet
+     * trust-resolve it against a registry. Credo only accepts this at issuer creation, so an
+     * issuer record created under a different value keeps it until the record is recreated.
+     */
+    metadataSigner?: 'x5c' | 'did'
   }
   verifier?: {
     id: string
