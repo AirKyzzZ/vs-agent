@@ -192,7 +192,12 @@ export class IssuerService {
     if (certificateDid !== agentDid) {
       throw new Error('OpenID4VC issuer certificate DID does not match the agent DID')
     }
-    await publishDevelopmentSigningKey(this.agent, signingCertificate, 'issuer')
+    await publishDevelopmentSigningKey(
+      this.agent,
+      signingCertificate,
+      'issuer',
+      this.issuerOptions().metadataSigner === 'did' ? ['authentication'] : [],
+    )
 
     const binding = await verifyKeyBoundToDid(
       this.agent,
@@ -242,7 +247,7 @@ export class IssuerService {
         this.agent,
         did,
         signingCertificate.certificate.publicJwk.toJson(),
-        ['assertionMethod'],
+        ['authentication'],
         ownDidResolutionPolicy(did ?? ''),
       )
       if (!didUrl) {
