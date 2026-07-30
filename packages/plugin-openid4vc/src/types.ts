@@ -40,6 +40,12 @@ export interface OpenId4VcPluginOptions {
     id: string
     displayName: string
     signing: OpenId4VcSigningOptions
+    /**
+     * How the verifier identifies itself in the authorization request. `x5c` (the default) yields an
+     * `x509_hash:` client_id; `did` yields the verifier's DID, which is what lets a wallet
+     * trust-resolve it against a registry instead of against a certificate.
+     */
+    requestSigner?: 'x5c' | 'did'
   }
   trust?: {
     resolverUrl: string
@@ -47,6 +53,11 @@ export interface OpenId4VcPluginOptions {
     allowedDidWebHosts: string[]
     credentialIssuerCertificates: string[]
     developmentCertificateFingerprints?: string[]
+  }
+  revocation?: {
+    enabled: boolean
+    /** Status list capacity in entries; defaults to 131072. */
+    size?: number
   }
   credentialConfigurations: OpenId4VcCredentialConfiguration[]
   verifierPolicies: OpenId4VcVerifierPolicy[]
