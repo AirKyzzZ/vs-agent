@@ -154,6 +154,17 @@ spec:
     requests:
       storage: 1Gi
 {{- end }}
+{{- if .Values.openid4vc.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+   name: {{ .Values.name }}-openid4vc
+   namespace: {{ .Release.Namespace }}
+data:
+   openid4vc.json: |
+{{ .Values.openid4vc.config | toPrettyJson | indent 5 }}
+{{- end }}
 ---
 # StatefulSet description for the VS Agent
 # This StatefulSet manages the deployment of the VS Agent service
@@ -205,6 +216,12 @@ spec:
             - name: ADMIN_API_CORPORATION_ALLOWED_ACCOUNTS
               value: {{ .Values.adminApiCorporationAllowedAccounts | quote }}
             {{- end }}
+            {{- if .Values.openid4vc.enabled }}
+            - name: VS_AGENT_PLUGINS
+              value: {{ .Values.openid4vc.plugins | quote }}
+            - name: OID4VC_CONFIG_FILE
+              value: {{ printf "%s/openid4vc.json" .Values.openid4vc.mountPath | quote }}
+            {{- end }}
 {{- with .Values.extraEnv }}
 {{ toYaml . | nindent 12 }}
 {{- end }}
@@ -254,6 +271,11 @@ spec:
             volumeMounts:
             - name: {{ .Values.name }}-vsa-pv
               mountPath: /root/.afj
+            {{- if .Values.openid4vc.enabled }}
+            - name: {{ .Values.name }}-openid4vc
+              mountPath: {{ .Values.openid4vc.mountPath | quote }}
+              readOnly: true
+            {{- end }}
         {{- if .Values.database.enabled }}
          -  name: postgres
             image: postgres:15.2
@@ -305,6 +327,11 @@ spec:
          - name: {{ .Values.name }}-vsa-pv
            persistentVolumeClaim:
              claimName: {{ .Values.name }}-vsa-pv
+        {{- if .Values.openid4vc.enabled }}
+         - name: {{ .Values.name }}-openid4vc
+           configMap:
+             name: {{ .Values.name }}-openid4vc
+        {{- end }}
         {{- if .Values.database.enabled }}
          - name: {{ .Values.name }}-pg-pv-main
            persistentVolumeClaim:

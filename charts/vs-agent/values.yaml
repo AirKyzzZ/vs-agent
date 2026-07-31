@@ -77,6 +77,16 @@ ingress:
 # Extra environment variables (extensible)
 extraEnv: []
 
+# OpenID4VC plugin. The agent reads its plugin options from a JSON file, so there is
+# no way to enable OpenID4VC through environment variables alone: turning this on
+# renders `config` into a ConfigMap, mounts it, and points OID4VC_CONFIG_FILE at it.
+# Left disabled the agent serves DIDComm only.
+openid4vc:
+  enabled: false
+  plugins: "messaging,openid4vc"
+  mountPath: "/run/config"
+  config: {}
+
 # Persistent volume configuration for app
 storage:
   size: 1Gi
