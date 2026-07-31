@@ -17,7 +17,9 @@ import {
   didFromValidatedCertificate,
   loadSigningCertificate,
   publishDevelopmentSigningKey,
+  signingCertificateInfo,
   type SigningCertificateHandle,
+  type SigningCertificateInfo,
 } from './CertificateService'
 
 type IssuerApi = Pick<
@@ -118,6 +120,13 @@ export class IssuerService {
       createdAt: session.createdAt,
       ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
     }
+  }
+
+  /** Public signing-certificate material, for operators wiring verifier
+   *  fingerprint pins (never includes private keys). */
+  public getCertificateInfo(): SigningCertificateInfo {
+    this.assertInitialized()
+    return signingCertificateInfo('issuer', this.signingCertificateHandle())
   }
 
   public getVctMetadata(configurationId: string): SdJwtVcTypeMetadata | undefined {
