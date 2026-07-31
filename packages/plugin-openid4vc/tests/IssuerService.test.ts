@@ -453,6 +453,7 @@ describe('IssuerService', () => {
 
     expect(metadata).toEqual({
       vct: 'https://agent.example/oid4vc/vct/employee',
+      relatedJsonSchemaCredentialId: 'https://agent.example/vt/employee.json',
       name: 'Employee credential',
       description: 'Proof of employment',
       display: [

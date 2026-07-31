@@ -39,6 +39,10 @@ export type OpenId4VcIssuerAgent = Pick<BaseAgent, 'dids' | 'genericRecords' | '
   }
 }
 
+export type VtSdJwtVcTypeMetadata = SdJwtVcTypeMetadata & {
+  relatedJsonSchemaCredentialId: string
+}
+
 export interface OpenId4VcOfferResult {
   credentialOffer: string
   issuanceSessionId: string
@@ -124,12 +128,18 @@ export class IssuerService {
     return signingCertificateInfo('issuer', this.signingCertificateHandle())
   }
 
-  public getVctMetadata(configurationId: string): SdJwtVcTypeMetadata | undefined {
+  /** SD-JWT VC type metadata, extended with the Verifiable Trust link: the
+   *  ecosystem's VTJSC (relatedJsonSchemaCredentialId) is THE schema anchor -
+   *  wallets verify the VTJSC signature and resolve the schema through their
+   *  own VPR access from its $ref + digestSRI. The spec's additional-property
+   *  extensibility keeps plain SD-JWT VC consumers unaffected. */
+  public getVctMetadata(configurationId: string): VtSdJwtVcTypeMetadata | undefined {
     const configuration = findCredentialConfiguration(this.options, configurationId)
     if (!configuration) return undefined
 
     return {
       vct: configuration.vct,
+      relatedJsonSchemaCredentialId: configuration.vtjscId,
       name: configuration.name,
       ...(configuration.description ? { description: configuration.description } : {}),
       display: [
