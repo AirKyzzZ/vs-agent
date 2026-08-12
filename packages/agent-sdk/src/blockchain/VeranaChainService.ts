@@ -17,6 +17,7 @@ import {
   CredentialSchema,
   CredentialSchemaQueryClient,
   DelegationQueryClient,
+  DigestQueryClient,
   Ecosystem,
   EcosystemQueryClient,
   OperatorAuthorization,
@@ -26,6 +27,7 @@ import {
   SelfCreateParticipantParams,
   SetParticipantOPToValidatedParams,
   StartParticipantOPParams,
+  StoredDigest,
   VERANA_BECH32_PREFIX,
   VeranaChainConfig,
   VsOperatorAuthorization,
@@ -33,6 +35,7 @@ import {
 
 const { QueryClientImpl: CsQueryClientImpl } = require('@verana-labs/verana-types/codec/verana/cs/v1/query')
 const { QueryClientImpl: DeQueryClientImpl } = require('@verana-labs/verana-types/codec/verana/de/v1/query')
+const { QueryClientImpl: DiQueryClientImpl } = require('@verana-labs/verana-types/codec/verana/di/v1/query')
 const {
   QueryClientImpl: EcQueryClientImpl,
   QueryGetEcosystemRequest,
@@ -52,10 +55,16 @@ const {
   MsgSelfCreateParticipant,
   MsgSelfCreateParticipantResponse,
 } = require('@verana-labs/verana-types/codec/verana/pp/v1/tx')
+const { MsgStoreDigest } = require('@verana-labs/verana-types/codec/verana/di/v1/tx')
 
 // ParticipantRole.HOLDER (x/pp/types); the only role whose vs_operator may send TriggerResolver (chain Path 1).
 const PARTICIPANT_ROLE_HOLDER = 6
 const PARTICIPANT_ROLE_ISSUER = 1
+
+// the chain answers a query for an unknown record with a NotFound error, not with an empty result
+function isNotFoundError(error: unknown): boolean {
+  return /not found|NotFound|key not found/i.test((error as Error)?.message ?? '')
+}
 
 function mapParticipant(p: RawParticipant): Participant {
   return {
@@ -82,6 +91,7 @@ export class VeranaChainService {
   private deQuery!: DelegationQueryClient
   private ecQuery!: EcosystemQueryClient
   private csQuery!: CredentialSchemaQueryClient
+  private diQuery!: DigestQueryClient
 
   constructor(private readonly config: VeranaChainConfig) {}
 
@@ -133,6 +143,7 @@ export class VeranaChainService {
     this.deQuery = new DeQueryClientImpl(rpc) as DelegationQueryClient
     this.ecQuery = new EcQueryClientImpl(rpc) as EcosystemQueryClient
     this.csQuery = new CsQueryClientImpl(rpc) as CredentialSchemaQueryClient
+    this.diQuery = new DiQueryClientImpl(rpc) as DigestQueryClient
   }
 
   // Query API (unsigned)
@@ -209,6 +220,16 @@ export class VeranaChainService {
     }
   }
 
+  async getDigest(digest: string): Promise<StoredDigest | undefined> {
+    try {
+      const result = await this.diQuery.GetDigest({ digest })
+      return result.digest
+    } catch (error) {
+      if (isNotFoundError(error)) return undefined
+      throw error
+    }
+  }
+
   // Transaction API (signed)
   async startParticipantOP(
     params: StartParticipantOPParams,
@@ -278,6 +299,16 @@ export class VeranaChainService {
     const result = await this.broadcastMsg({ typeUrl: veranaTypeUrls.MsgSelfCreateParticipant, value })
     const participantId = Number(MsgSelfCreateParticipantResponse.decode(result.msgResponses[0].value).id)
     return { participantId, txHash: result.transactionHash }
+  }
+
+  async storeDigest(digest: string): Promise<{ txHash: string }> {
+    const value = MsgStoreDigest.fromPartial({
+      authority: this.corporationAddress,
+      operator: this.operatorAddress,
+      digest,
+    })
+    const result = await this.broadcastMsg({ typeUrl: veranaTypeUrls.MsgStoreDigest, value })
+    return { txHash: result.transactionHash }
   }
 
   async setParticipantOPToValidated(params: SetParticipantOPToValidatedParams): Promise<{ txHash: string }> {
