@@ -2,7 +2,7 @@ import { DidDocument, VerificationMethod } from '@credo-ts/core'
 import { describe, expect, it, vi } from 'vitest'
 
 import { getEcsSchemas } from '../src/utils/data'
-import { generateVerifiablePresentation, SelfTrDefaults } from '../src/utils/setupSelfTr'
+import { generateVerifiablePresentation, SelfTrDefaults, sortKeysDeep } from '../src/utils/setupSelfTr'
 
 const DID = 'did:web:agent.example'
 const VP_URL = 'https://agent.example/vt/ecs-service-vtc-vp.json'
@@ -101,5 +101,50 @@ describe('generateVerifiablePresentation beforePublish step', () => {
     expect(repositoryUpdate).not.toHaveBeenCalled()
     expect(didsUpdate).not.toHaveBeenCalled()
     expect(metadata.get('_vt/vtc')).toBeUndefined()
+  })
+
+  it('regenerates when claims change, and skips when they do not', async () => {
+    // beforePublish always fires, cache hit or not (it's how a failed publish retries), so
+    // regeneration is observed via repositoryUpdate: it only runs when content actually changes.
+    const { agent, repositoryUpdate } = makeAgent()
+    const beforePublish = vi.fn(async () => {})
+
+    await publish(agent, beforePublish)
+    expect(repositoryUpdate).toHaveBeenCalledTimes(1)
+
+    // Same claims again: cache hit, no regeneration.
+    await publish(agent, beforePublish)
+    expect(repositoryUpdate).toHaveBeenCalledTimes(1)
+
+    // A changed claim must invalidate the cache and regenerate.
+    const changed: SelfTrDefaults = { ...defaults, serviceDescription: 'a different description' }
+    await generateVerifiablePresentation(
+      agent as never,
+      VP_URL,
+      getEcsSchemas('https://agent.example'),
+      'ecs-service',
+      ['VerifiableCredential', 'VerifiableTrustCredential'],
+      { id: JSC_URL, type: 'JsonSchemaCredential' },
+      changed,
+      beforePublish,
+    )
+    expect(repositoryUpdate).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('sortKeysDeep', () => {
+  it('sorts keys at every nesting level, including inside arrays', () => {
+    const a = { b: 1, a: { d: 1, c: 2 }, list: [{ z: 1, a: 2 }] }
+    const b = { a: { c: 2, d: 1 }, list: [{ a: 2, z: 1 }], b: 1 }
+
+    // Differently-ordered but equivalent inputs must serialize identically.
+    expect(JSON.stringify(sortKeysDeep(a))).toBe(JSON.stringify(sortKeysDeep(b)))
+    expect(JSON.stringify(sortKeysDeep(a))).toBe('{"a":{"c":2,"d":1},"b":1,"list":[{"a":2,"z":1}]}')
+  })
+
+  it('leaves primitive and null values unchanged', () => {
+    expect(sortKeysDeep('value')).toBe('value')
+    expect(sortKeysDeep(42)).toBe(42)
+    expect(sortKeysDeep(null)).toBeNull()
   })
 })
