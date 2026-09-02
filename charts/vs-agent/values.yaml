@@ -22,6 +22,19 @@ eventsBaseUrl: "https://events.{{ .Values.global.domain }}"
 didcommInvitationImageUrl: "https://image.{{ .Values.global.domain }}/invitation.png"
 # enablePublicApiSwagger: true # Enable Swagger documentation for the VS Agent service (its recommended only for development environments)
 publicDidMethod: "webvh"
+
+# Verana network. The agent refuses to start without the first three, and without
+# VERANA_ACCOUNT_MNEMONIC (see "Secrets Management" in the README).
+veranaCorporationId: "" # VPR Corporation.id the agent belongs to (non-negative integer)
+veranaRpcEndpointUrl: "" # e.g. "https://rpc.testnet.verana.network"
+veranaIndexerBaseUrl: "" # e.g. "https://idx.testnet.verana.network"
+veranaChainId: "" # Required for the VS-CONN-VS trust gate
+
+# How the agent obtains its ECS credentials: standalone (default) or delegated
+agentMode: "standalone"
+trustedEcsEcosystemDids: "" # Comma-separated ECS ecosystem DIDs, required when agentMode is standalone
+delegatedParentVsDid: "" # DID of the parent Verifiable Service, required when agentMode is delegated
+
 resources:
   requests:
     cpu: 100m
@@ -68,6 +81,10 @@ ingress:
   tlsSecret: public.{{ .Values.name }}.{{ .Values.global.domain }}-cert
   public:
     enableCors: true
+  # The agent reads the address of each TCP connection. The ingress controller has an
+  # external address. Therefore, the agent rejects these requests with the HTTP status
+  # 403 if adminApiAuthMode is "internal".
+  # Set adminApiAuthMode to "corporation" before you set a host here.
   private:
     enableCors: true
     whitelistSourceRange: "" # e.g. "xxx.xx.xxx.xxx/32"
