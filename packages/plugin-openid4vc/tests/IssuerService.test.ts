@@ -2,6 +2,7 @@ import type { OpenId4VcPluginOptions } from '../src/types'
 
 import { AgentContext, ClaimFormat, RecordNotFoundError, TokenStatusListApi } from '@credo-ts/core'
 import { OpenId4VcIssuanceSessionRepository } from '@credo-ts/openid4vc'
+import { createHeaderAndPayload, JWT_STATUS_LIST_TYPE, StatusList } from '@owf/token-status-list'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -159,14 +160,31 @@ function signingHandle() {
   }
 }
 
+const STATUS_LIST_URI = 'https://agent.example/oid4vc/status-list/list-1'
+const STATUS_LIST_SIZE = 10
+
+function statusListToken(revoked: number[]) {
+  const list = new StatusList(
+    Array.from({ length: STATUS_LIST_SIZE }, (_, index) => (revoked.includes(index) ? 1 : 0)),
+    1,
+  )
+  const { header, payload } = createHeaderAndPayload(
+    list,
+    { sub: STATUS_LIST_URI, iat: 1_784_635_200 },
+    { alg: 'ES256', typ: JWT_STATUS_LIST_TYPE },
+  )
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
+  return `${encode(header)}.${encode(payload)}.signature`
+}
+
 function statusListState(sessionIndices: Record<string, number[]>, revoked: number[]) {
   return {
     content: {
       listId: 'list-1',
-      uri: 'https://agent.example/oid4vc/status-list/list-1',
-      size: 10,
+      uri: STATUS_LIST_URI,
+      size: STATUS_LIST_SIZE,
       nextIndex: Object.values(sessionIndices).flat().length,
-      token: 'eyJ.status.list',
+      token: statusListToken(revoked),
       sessionIndices,
       revoked,
     },
@@ -814,6 +832,16 @@ describe('IssuerService', () => {
       await expect(service.revokeIssuanceSession('session-1')).rejects.toBeInstanceOf(
         OpenId4VcIssuanceSessionStateError,
       )
+    })
+
+    it('revokes a session that issued and then errored', async () => {
+      const { service, api } = await initialized({
+        revocation: { enabled: true },
+        statusList: { sessionIndices: { 'session-1': [0] }, revoked: [] },
+      })
+      api.getIssuanceSessionById.mockResolvedValue(issuanceSession({ state: 'Error' }))
+
+      await expect(service.revokeIssuanceSession('session-1')).resolves.toBeUndefined()
     })
 
     it('refuses to delete a session whose credential is not revoked', async () => {
