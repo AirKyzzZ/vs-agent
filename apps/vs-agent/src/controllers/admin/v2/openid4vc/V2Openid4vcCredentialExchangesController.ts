@@ -106,7 +106,7 @@ export class V2Openid4vcCredentialExchangesController {
       filtered,
       query,
       {
-        method: 'listCredentialExchanges',
+        method: 'openid4vc.listCredentialExchanges',
         filters: { credentialConfigurationId: query.credentialConfigurationId, state: query.state },
       },
       createdAtKey,

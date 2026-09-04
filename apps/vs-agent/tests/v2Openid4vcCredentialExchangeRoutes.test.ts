@@ -18,6 +18,7 @@ import {
 } from '@verana-labs/vs-agent-plugin-openid4vc'
 
 import { ErrorEnvelopeFilter } from '../src/common'
+import { encodeCursor, hashScope } from '../src/common/pagination/cursor'
 import {
   Openid4vcCredentialOfferBodyDto,
   Openid4vcListCredentialExchangesQueryDto,
@@ -160,6 +161,18 @@ describe('v2 openid4vc credential exchange routes', () => {
     )
     expect(replay.status).toBe(400)
     expect(replay.body.error.code).toBe('INVALID_CURSOR')
+  })
+
+  it('refuses a cursor minted by the didcomm credential exchanges scope', async () => {
+    const cursor = encodeCursor(
+      hashScope({ method: 'listCredentialExchanges' }),
+      '2026-01-01T00:00:00.000Z|ce-a',
+    )
+    const response = await request(app.getHttpServer()).get(
+      `/v2/openid4vc/credential-exchanges?cursor=${encodeURIComponent(cursor)}`,
+    )
+    expect(response.status).toBe(400)
+    expect(response.body.error.code).toBe('INVALID_CURSOR')
   })
 
   it('gets one credential exchange by identifier and answers UNKNOWN_ID otherwise', async () => {
