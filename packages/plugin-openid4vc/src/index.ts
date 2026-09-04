@@ -27,15 +27,17 @@ export type {
 export {
   OpenId4VcVerifierRequestError,
   UnknownVerificationSessionError,
+  UnknownVerifierPolicyError,
   VerifierService,
 } from './services/VerifierService'
 export type {
   OpenId4VcQueryLanguage,
   OpenId4VcVerificationRequest,
-  OpenId4VcVerificationResult,
+  OpenId4VcVerificationSessionSummary,
   OpenId4VcVerifiedCredentialResult,
   OpenId4VcVerifierAgent,
 } from './services/VerifierService'
+export type { PresentationDecision } from './services/presentationVerification'
 export type { TrustEvidence, TrustVerdict, TrustVerdictName, VeranaTrustStatus } from './trust/types'
 export type {
   OpenId4VcConfiguredSigningMaterial,

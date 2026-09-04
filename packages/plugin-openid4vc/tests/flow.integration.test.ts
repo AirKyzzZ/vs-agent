@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { UnknownIssuanceSessionError } from '../src/services/IssuerService'
+import { UnknownVerificationSessionError } from '../src/services/VerifierService'
 
 import { createCertificateFixtures } from './helpers/certificates'
 import { didDocumentWithKey, MapDidResolver } from './helpers/didResolver'
@@ -135,7 +136,9 @@ describe('in-process OpenID4VC issuance and presentation', () => {
     expect(exchange.resolved.dcql).toBeDefined()
     expect(exchange.submission.ok).toBe(true)
     expect(exchange.submission.serverResponse?.status).toBe(200)
-    expect(await agents.verifier.service.getResult(exchange.verificationSessionId)).toMatchObject({
+    expect(
+      await agents.verifier.service.getVerificationSession(exchange.verificationSessionId),
+    ).toMatchObject({
       state: 'ResponseVerified',
       cryptographicVerified: true,
       accepted: true,
@@ -145,6 +148,27 @@ describe('in-process OpenID4VC issuance and presentation', () => {
         disclosedClaims: { name: 'Ada Lovelace', role: 'engineer' },
       },
     })
+  }, 60_000)
+
+  it('carries the policy id, stores the decision, and lets the verifier delete the session', async () => {
+    const exchange = await presentCredential()
+
+    const first = await agents.verifier.service.getVerificationSession(exchange.verificationSessionId)
+    expect(first).toMatchObject({ policyId: 'employee-check', accepted: true })
+    expect(first.createdAt).toBeInstanceOf(Date)
+
+    resolver.reset()
+    const second = await agents.verifier.service.getVerificationSession(exchange.verificationSessionId)
+    expect(second).toMatchObject({ accepted: true, trust: { verdict: 'TRUSTED_AUTHORIZED' } })
+    expect(resolver.requestCount).toBe(0)
+
+    const listed = await agents.verifier.service.listVerificationSessions()
+    expect(listed.map(session => session.id)).toContain(exchange.verificationSessionId)
+
+    await agents.verifier.service.deleteVerificationSession(exchange.verificationSessionId)
+    await expect(
+      agents.verifier.service.getVerificationSession(exchange.verificationSessionId),
+    ).rejects.toBeInstanceOf(UnknownVerificationSessionError)
   }, 60_000)
 
   it('returns UNTRUSTED without querying Verana when the issuer DID key is wrong', async () => {
@@ -159,7 +183,9 @@ describe('in-process OpenID4VC issuance and presentation', () => {
       expect(exchange.submission.ok).toBe(true)
       resolver.reset()
 
-      expect(await agents.verifier.service.getResult(exchange.verificationSessionId)).toMatchObject({
+      expect(
+        await agents.verifier.service.getVerificationSession(exchange.verificationSessionId),
+      ).toMatchObject({
         state: 'ResponseVerified',
         cryptographicVerified: true,
         accepted: false,
@@ -177,7 +203,9 @@ describe('in-process OpenID4VC issuance and presentation', () => {
       const exchange = await presentCredential()
       resolver.reset()
 
-      expect(await agents.verifier.service.getResult(exchange.verificationSessionId)).toMatchObject({
+      expect(
+        await agents.verifier.service.getVerificationSession(exchange.verificationSessionId),
+      ).toMatchObject({
         state: 'ResponseVerified',
         cryptographicVerified: true,
         accepted: false,
@@ -193,7 +221,9 @@ describe('in-process OpenID4VC issuance and presentation', () => {
     const exchange = await presentCredential()
     expect(exchange.submission.ok).toBe(true)
     expect(exchange.submission.serverResponse?.status).toBe(200)
-    expect(await agents.verifier.service.getResult(exchange.verificationSessionId)).toMatchObject({
+    expect(
+      await agents.verifier.service.getVerificationSession(exchange.verificationSessionId),
+    ).toMatchObject({
       state: 'ResponseVerified',
       cryptographicVerified: true,
     })
@@ -221,7 +251,9 @@ describe('in-process OpenID4VC issuance and presentation', () => {
     const exchange = await presentCredential()
     await resolver.stop()
 
-    expect(await agents.verifier.service.getResult(exchange.verificationSessionId)).toMatchObject({
+    expect(
+      await agents.verifier.service.getVerificationSession(exchange.verificationSessionId),
+    ).toMatchObject({
       state: 'ResponseVerified',
       cryptographicVerified: true,
       accepted: false,

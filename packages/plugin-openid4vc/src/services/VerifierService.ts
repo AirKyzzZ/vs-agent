@@ -6,8 +6,11 @@ import type {
   OpenId4VpVerifiedAuthorizationResponse,
 } from '@credo-ts/openid4vc'
 
-import { RecordNotFoundError } from '@credo-ts/core'
-import { OpenId4VcVerificationSessionState } from '@credo-ts/openid4vc'
+import { AgentContext, RecordNotFoundError } from '@credo-ts/core'
+import {
+  OpenId4VcVerificationSessionRepository,
+  OpenId4VcVerificationSessionState,
+} from '@credo-ts/openid4vc'
 
 import { findCredentialConfiguration, findVerifierPolicy } from '../config'
 import { TrustClient } from '../trust/TrustClient'
@@ -38,6 +41,8 @@ type VerifierApi = Pick<
   | 'createAuthorizationRequest'
   | 'getVerificationSessionById'
   | 'getVerifiedAuthorizationResponse'
+  | 'findVerificationSessionsByQuery'
+  | 'deleteVerificationSessionById'
 >
 
 export type OpenId4VcVerifierAgent = Pick<
@@ -61,11 +66,20 @@ export interface OpenId4VcVerificationRequest {
 
 export type { OpenId4VcVerifiedCredentialResult } from './presentationVerification'
 
-export type OpenId4VcVerificationResult = PresentationDecision & {
-  state: OpenId4VcVerificationSessionRecord['state']
+const POLICY_TAG = 'policyId'
+const OUTCOME_METADATA_KEY = 'openid4vc/verificationOutcome'
+
+export type OpenId4VcVerificationSessionSummary = PresentationDecision & {
+  id: string
+  policyId?: string
+  state: OpenId4VcVerificationSessionState
+  createdAt: Date
+  updatedAt: Date
+  errorMessage?: string
 }
 
 export class OpenId4VcVerifierRequestError extends Error {}
+export class UnknownVerifierPolicyError extends Error {}
 export class UnknownVerificationSessionError extends Error {}
 
 export class VerifierService {
@@ -104,13 +118,11 @@ export class VerifierService {
 
     const policy = findVerifierPolicy(this.options, policyId)
     if (!policy) {
-      throw new OpenId4VcVerifierRequestError(`unknown verifier policy '${policyId}'`)
+      throw new UnknownVerifierPolicyError(`unknown verifier policy '${policyId}'`)
     }
     const configuration = findCredentialConfiguration(this.options, policy.credentialConfigurationId)
     if (!configuration) {
-      throw new OpenId4VcVerifierRequestError(
-        `verifier policy '${policyId}' references an unknown credential configuration`,
-      )
+      throw new Error(`verifier policy '${policyId}' references an unknown credential configuration`)
     }
 
     const { authorizationRequest, verificationSession } = await this.verifierApi().createAuthorizationRequest(
@@ -122,6 +134,9 @@ export class VerifierService {
         ...presentationQueryFor(configuration, policy, queryLanguage),
       },
     )
+
+    verificationSession.setTag(POLICY_TAG, policyId)
+    await this.sessionRepository().update(this.agentContext(), verificationSession)
 
     return {
       authorizationRequest,
@@ -135,17 +150,57 @@ export class VerifierService {
     return signingCertificateInfo('verifier', this.signingCertificateHandle())
   }
 
-  public async getResult(sessionId: string): Promise<OpenId4VcVerificationResult> {
-    const session = await this.getSession(sessionId)
-    this.assertSessionOwnership(session, sessionId)
+  public async getVerificationSession(id: string): Promise<OpenId4VcVerificationSessionSummary> {
+    await this.ensureInitialized()
+    return this.summarize(await this.findOwnedSession(id))
+  }
 
+  public async listVerificationSessions(): Promise<OpenId4VcVerificationSessionSummary[]> {
+    await this.ensureInitialized()
+    const sessions = await this.verifierApi().findVerificationSessionsByQuery({
+      verifierId: this.verifierOptions().id,
+    })
+    return Promise.all(sessions.map(session => this.summarize(session)))
+  }
+
+  public async deleteVerificationSession(id: string): Promise<void> {
+    await this.ensureInitialized()
+    await this.findOwnedSession(id)
+    await this.verifierApi().deleteVerificationSessionById(id)
+  }
+
+  private async findOwnedSession(id: string): Promise<OpenId4VcVerificationSessionRecord> {
+    const session = await this.getSession(id)
+    this.assertSessionOwnership(session, id)
+    return session
+  }
+
+  private async summarize(
+    session: OpenId4VcVerificationSessionRecord,
+  ): Promise<OpenId4VcVerificationSessionSummary> {
+    const policyId = session.getTag(POLICY_TAG)
+    const decision = await this.decisionFor(session)
+    return {
+      id: session.id,
+      ...(typeof policyId === 'string' ? { policyId } : {}),
+      state: session.state,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt ?? session.createdAt,
+      ...(session.errorMessage ? { errorMessage: session.errorMessage } : {}),
+      ...decision,
+    }
+  }
+
+  private async decisionFor(session: OpenId4VcVerificationSessionRecord): Promise<PresentationDecision> {
     if (session.state !== OpenId4VcVerificationSessionState.ResponseVerified) {
-      return { state: session.state, cryptographicVerified: false, accepted: false }
+      return { cryptographicVerified: false, accepted: false }
     }
 
-    const verified = await this.getVerifiedResponse(sessionId)
-    this.assertStableVerifiedSession(verified, sessionId)
+    const stored = session.metadata.get<PresentationDecision>(OUTCOME_METADATA_KEY)
+    if (stored) return stored
 
+    const verified = await this.getVerifiedResponse(session.id)
+    this.assertStableVerifiedSession(verified, session.id)
     const decision = await decidePresentation({
       agent: this.agent,
       options: this.options,
@@ -153,7 +208,19 @@ export class VerifierService {
       trustClient: this.trustClient,
       verified,
     })
-    return { state: session.state, ...decision }
+    if (decision.trust?.verdict !== 'RESOLVER_UNAVAILABLE') {
+      session.metadata.set(OUTCOME_METADATA_KEY, decision)
+      await this.sessionRepository().update(this.agentContext(), session)
+    }
+    return decision
+  }
+
+  private sessionRepository(): OpenId4VcVerificationSessionRepository {
+    return this.agent.dependencyManager.resolve(OpenId4VcVerificationSessionRepository)
+  }
+
+  private agentContext(): AgentContext {
+    return this.agent.dependencyManager.resolve(AgentContext)
   }
 
   private async initialize(): Promise<void> {
