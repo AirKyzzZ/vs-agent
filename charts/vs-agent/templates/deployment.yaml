@@ -231,11 +231,13 @@ spec:
             - name: ADMIN_API_CORPORATION_ALLOWED_ACCOUNTS
               value: {{ .Values.adminApiCorporationAllowedAccounts | quote }}
             {{- end }}
-            {{- if .Values.oid4vc.config }}
+            {{- if or .Values.oid4vc.config .Values.oid4vc.existingSecret }}
             - name: OID4VC_CONFIG_FILE
               value: "/run/config/oid4vc/openid4vc.json"
+            {{- if .Values.oid4vc.config }}
             - name: OID4VC_CONFIG_CHECKSUM
               value: {{ sha256sum .Values.oid4vc.config | quote }}
+            {{- end }}
             {{- end }}
 {{- with .Values.extraEnv }}
 {{ toYaml . | nindent 12 }}
@@ -271,7 +273,7 @@ spec:
             volumeMounts:
             - name: {{ .Values.name }}-vsa-pv
               mountPath: /root/.afj
-            {{- if .Values.oid4vc.config }}
+            {{- if or .Values.oid4vc.config .Values.oid4vc.existingSecret }}
             - name: {{ .Values.name }}-oid4vc-config
               mountPath: /run/config/oid4vc
               readOnly: true
@@ -327,7 +329,11 @@ spec:
          - name: {{ .Values.name }}-vsa-pv
            persistentVolumeClaim:
              claimName: {{ .Values.name }}-vsa-pv
-        {{- if .Values.oid4vc.config }}
+        {{- if .Values.oid4vc.existingSecret }}
+         - name: {{ .Values.name }}-oid4vc-config
+           secret:
+             secretName: {{ .Values.oid4vc.existingSecret }}
+        {{- else if .Values.oid4vc.config }}
          - name: {{ .Values.name }}-oid4vc-config
            configMap:
              name: {{ .Values.name }}-oid4vc-config

@@ -67,6 +67,8 @@ database:
 # PUBLIC_API_BASE_URL.
 oid4vc:
   config: "" # openid4vc.json content as a string
+  # name of a Secret holding openid4vc.json; use it for configured signing material instead of config
+  existingSecret: ""
 
 redis:
   enabled: false
