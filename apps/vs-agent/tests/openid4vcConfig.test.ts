@@ -37,7 +37,9 @@ const validConfig = () => ({
       ttlSeconds: 3_600,
     },
   ],
-  verifierPolicies: [{ id: 'employee-check', credentialConfigurationId: 'employee', requestedClaims: ['name'] }],
+  verifierPolicies: [
+    { id: 'employee-check', credentialConfigurationId: 'employee', requestedClaims: ['name'] },
+  ],
 })
 
 describe('OpenID4VC configuration file', () => {
@@ -72,9 +74,14 @@ describe('OpenID4VC configuration file', () => {
   })
 
   it('rejects a public API base URL supplied by the file', async () => {
-    await writeFile(configPath, JSON.stringify({ ...validConfig(), publicApiBaseUrl: 'https://attacker.example' }))
+    await writeFile(
+      configPath,
+      JSON.stringify({ ...validConfig(), publicApiBaseUrl: 'https://attacker.example' }),
+    )
 
-    await expect(readOpenId4VcOptions(configPath, publicApiBaseUrl)).rejects.toThrow('publicApiBaseUrl must not be set')
+    await expect(readOpenId4VcOptions(configPath, publicApiBaseUrl)).rejects.toThrow(
+      'publicApiBaseUrl must not be set',
+    )
   })
 
   it('rejects an unknown top-level key without echoing its value', async () => {
@@ -92,7 +99,9 @@ describe('OpenID4VC configuration file', () => {
     const privateValue = 'private-jwk-secret-value'
     const certificateValue = 'private-certificate-value'
     const config = validConfig()
-    config.issuer.signing = { configured: { certificateChain: [certificateValue], privateJwk: privateValue } } as never
+    config.issuer.signing = {
+      configured: { certificateChain: [certificateValue], privateJwk: privateValue },
+    } as never
     await writeFile(configPath, JSON.stringify(config))
 
     const error = await readOpenId4VcOptions(configPath, publicApiBaseUrl).catch(value => value)
@@ -128,6 +137,8 @@ describe('OpenID4VC configuration file', () => {
   it('rejects a JSON document that is not an object', async () => {
     await writeFile(configPath, JSON.stringify(['not-an-object']))
 
-    await expect(readOpenId4VcOptions(configPath, publicApiBaseUrl)).rejects.toThrow('must contain a JSON object')
+    await expect(readOpenId4VcOptions(configPath, publicApiBaseUrl)).rejects.toThrow(
+      'must contain a JSON object',
+    )
   })
 })
