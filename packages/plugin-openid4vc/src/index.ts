@@ -1,16 +1,18 @@
+export { OpenId4VcIssuanceSessionState, OpenId4VcVerificationSessionState } from '@credo-ts/openid4vc'
+
 export {
   findCredentialConfiguration,
   findVerifierPolicy,
   parseOfferClaims,
   validateOpenId4VcOptions,
 } from './config'
-export { OpenId4VcPlugin } from './nestjs/OpenId4VcPlugin'
-export { IssuerController } from './nestjs/IssuerController'
-export { VerifierController } from './nestjs/VerifierController'
-export { CreateOpenId4VcOfferDto, CreateOpenId4VcVerificationRequestDto } from './nestjs/dto'
 export { setupOpenId4Vc } from './sdk/setupOpenId4Vc'
-export { StatusListService } from './services/StatusListService'
-export type { StatusReference } from './services/StatusListService'
+export type {
+  OpenId4VcAgentModules,
+  OpenId4VcIssuerRequestMapper,
+  OpenId4VcSdkPlugin,
+} from './sdk/setupOpenId4Vc'
+export type { SigningCertificateInfo, SigningRole } from './services/CertificateService'
 export {
   IssuerService,
   OpenId4VcIssuerRequestError,
@@ -27,16 +29,13 @@ export {
   VerifierService,
 } from './services/VerifierService'
 export type {
+  OpenId4VcQueryLanguage,
   OpenId4VcVerificationRequest,
   OpenId4VcVerificationResult,
   OpenId4VcVerifiedCredentialResult,
   OpenId4VcVerifierAgent,
 } from './services/VerifierService'
-export type {
-  OpenId4VcAgentModules,
-  OpenId4VcIssuerRequestMapper,
-  OpenId4VcSdkPlugin,
-} from './sdk/setupOpenId4Vc'
+export type { TrustEvidence, TrustVerdict, TrustVerdictName, VeranaTrustStatus } from './trust/types'
 export type {
   OpenId4VcConfiguredSigningMaterial,
   OpenId4VcCredentialConfiguration,

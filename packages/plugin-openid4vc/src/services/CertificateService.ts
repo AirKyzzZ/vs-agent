@@ -13,6 +13,8 @@ import {
 } from '@credo-ts/core'
 import { createHash } from 'node:crypto'
 
+import { isRecord } from '../utils/isRecord'
+
 const DEVELOPMENT_CERTIFICATE_VALIDITY_MS = 365 * 24 * 60 * 60 * 1_000
 const DEVELOPMENT_RECORD_PREFIX = 'openid4vc-development-signing'
 const JSON_WEB_KEY_2020_CONTEXT = 'https://w3id.org/security/suites/jws-2020/v1'
@@ -422,8 +424,4 @@ function parseDevelopmentRecord(content: Record<string, unknown>): DevelopmentCe
   }
 
   return { certificate: content.certificate, keyId: content.keyId }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

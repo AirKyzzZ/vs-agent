@@ -7,6 +7,8 @@ import type {
   VeranaTrustStatus,
 } from './types'
 
+import { isRecord } from '../utils/isRecord'
+
 import { computeVerdict } from './verdict'
 
 const TRUST_STATUSES = new Set<VeranaTrustStatus>(['TRUSTED', 'PARTIAL', 'UNTRUSTED'])
@@ -136,10 +138,6 @@ export class TrustClient {
       clearTimeout(timeout)
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isVeranaTrustStatus(value: unknown): value is VeranaTrustStatus {

@@ -9,6 +9,7 @@ import {
 import express, { type Express, type NextFunction, type Request, type Response } from 'express'
 
 import { trustedCertificatesForVerification } from '../trust/CertificateTrust'
+import { isRecord } from '../utils/isRecord'
 
 const ATTESTATION_AUTH_METHOD = 'attest_jwt_client_auth'
 const ATTESTATION_ALGORITHMS = ['ES256']
@@ -335,8 +336,4 @@ function isAuthorizationServerMetadataPath(path: string): boolean {
     path.startsWith('/.well-known/oauth-authorization-server/') ||
     path.endsWith('/.well-known/oauth-authorization-server')
   )
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

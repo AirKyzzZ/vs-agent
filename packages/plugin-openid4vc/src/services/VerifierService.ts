@@ -20,6 +20,7 @@ import {
   verifyKeyBoundToDid,
 } from '../trust/keyBinding'
 import { publishParallelWebSigningKey } from '../trust/parallelWebSigningKey'
+import { isRecord } from '../utils/isRecord'
 
 import {
   didFromValidatedCertificate,
@@ -598,8 +599,4 @@ function configuredDisclosedClaims(
 
 function equalStrings(left: string[], right: Array<string | undefined>): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

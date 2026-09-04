@@ -1,3 +1,4 @@
+import type { IssuerService, OpenId4VcIssuerAgent } from '../src/services/IssuerService'
 import type { OpenId4VcCredentialConfiguration } from '../src/types'
 import type {
   AgentContext,
@@ -30,8 +31,9 @@ import { CachedWebDidResolver } from '@verana-labs/vs-agent-sdk'
 import express from 'express'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { OpenId4VcPlugin } from '../src/nestjs/OpenId4VcPlugin'
-import { VerifierService } from '../src/services/VerifierService'
+import { validateOpenId4VcOptions } from '../src/config'
+import { setupOpenId4Vc } from '../src/sdk/setupOpenId4Vc'
+import { VerifierService, type OpenId4VcVerifierAgent } from '../src/services/VerifierService'
 import { createCertificateFixtures, OTHER_PRIVATE_JWK } from './helpers/certificates'
 import { startResolverStub } from './helpers/resolverStub'
 import { createVerifierCertificate } from './helpers/testAgent'
@@ -221,10 +223,13 @@ async function startWebvhVerifier({ seedAlternativeDids }: { seedAlternativeDids
       },
     ],
   }
-  const plugin = OpenId4VcPlugin(options)
-  if (!plugin.credoPlugin) throw new Error('plugin did not expose Credo modules')
-  if (!plugin.publicMiddleware) throw new Error('plugin did not expose public middleware')
-  app.use(plugin.publicMiddleware)
+  validateOpenId4VcOptions(options)
+  let issuerService: IssuerService | undefined
+  const sdkPlugin = setupOpenId4Vc(options, () => {
+    if (!issuerService) throw new Error('OpenID4VC issuer service is not initialized')
+    return issuerService
+  })
+  app.use(sdkPlugin.publicMiddleware)
 
   const logger = new ConsoleLogger(LogLevel.Off)
   const agent = new Agent({
@@ -244,7 +249,7 @@ async function startWebvhVerifier({ seedAlternativeDids }: { seedAlternativeDids
         resolvers: [new CachedWebDidResolver({ publicApiBaseUrl }), registry],
         registrars: [registry],
       }),
-      ...plugin.credoPlugin.modules,
+      ...sdkPlugin.modules,
     },
   }) as Agent & { did?: string }
   agent.did = WEBVH_DID
@@ -270,18 +275,11 @@ async function startWebvhVerifier({ seedAlternativeDids }: { seedAlternativeDids
   if (seedAlternativeDids) didRecord.setTag('alternativeDids', [WEB_DID])
   await agent.dependencyManager.resolve(DidRepository).save(agent.context, didRecord)
 
-  await plugin.initialize?.(agent as never, logger as never)
-
-  const provider = plugin.providers?.find(
-    (candidate): candidate is { provide: unknown; useFactory: (agent: unknown) => unknown } =>
-      typeof candidate === 'object' &&
-      candidate !== null &&
-      'provide' in candidate &&
-      'useFactory' in candidate &&
-      (candidate as { provide: unknown }).provide === VerifierService,
+  const service = new VerifierService(
+    agent as unknown as OpenId4VcIssuerAgent & OpenId4VcVerifierAgent,
+    options,
   )
-  if (!provider) throw new Error('plugin did not register VerifierService')
-  const service = provider.useFactory(agent) as VerifierService
+  await service.ensureInitialized()
 
   const fetchRequestJwt = async (authorizationRequest: string) => {
     const url = new URL(authorizationRequest.replace('openid4vp://', 'https://x/'))

@@ -142,6 +142,14 @@ describe('validateOpenId4VcOptions', () => {
     expect(() => validateOpenId4VcOptions(options)).toThrow(`reserved claim '${claim}'`)
   })
 
+  it('rejects a credential claim named status, which the issuer reserves for the status list', () => {
+    const options = validOptions()
+    options.credentialConfigurations[0].claims = ['name', 'status']
+    options.credentialConfigurations[0].disclosureFrame = ['name']
+
+    expect(() => validateOpenId4VcOptions(options)).toThrow("contains reserved claim 'status'")
+  })
+
   it('rejects a disclosure outside the claim allowlist', () => {
     const options = validOptions()
     options.credentialConfigurations[0].disclosureFrame = ['name', 'admin']

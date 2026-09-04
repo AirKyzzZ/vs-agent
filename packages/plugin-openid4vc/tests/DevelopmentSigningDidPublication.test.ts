@@ -25,7 +25,10 @@ import { agentDependencies } from '@credo-ts/node'
 import { askar } from '@openwallet-foundation/askar-nodejs'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { OpenId4VcPlugin } from '../src/nestjs/OpenId4VcPlugin'
+import { validateOpenId4VcOptions } from '../src/config'
+import { setupOpenId4Vc } from '../src/sdk/setupOpenId4Vc'
+import { IssuerService, type OpenId4VcIssuerAgent } from '../src/services/IssuerService'
+import { VerifierService, type OpenId4VcVerifierAgent } from '../src/services/VerifierService'
 
 const DID_WEB = 'did:web:agent.example'
 const DID_WEBVH = 'did:webvh:QmYwAPJzv5CZsnAzt8auVZRnGi2C9AwBypHj6yQVB5hJiJ:agent.example'
@@ -112,9 +115,9 @@ afterEach(async () => {
 
 describe('development signing DID publication', () => {
   it('publishes the generated issuer key before completing full plugin initialization', async () => {
-    const { agent, plugin, registry } = await createHarness('issuer', DID_WEB)
+    const { agent, initialize, registry } = await createHarness('issuer', DID_WEB)
 
-    await plugin.initialize?.(agent as never, {} as never)
+    await initialize()
 
     const document = registry.document(DID_WEB)
     const methodId = `${DID_WEB}#openid4vc-development-issuer`
@@ -127,9 +130,9 @@ describe('development signing DID publication', () => {
   })
 
   it('publishes the generated verifier key through the generic DID API for did:webvh', async () => {
-    const { agent, plugin, registry } = await createHarness('verifier', DID_WEBVH)
+    const { agent, initialize, registry } = await createHarness('verifier', DID_WEBVH)
 
-    await plugin.initialize?.(agent as never, {} as never)
+    await initialize()
 
     const document = registry.document(DID_WEBVH)
     const methodId = `${DID_WEBVH}#openid4vc-development-verifier`
@@ -142,9 +145,9 @@ describe('development signing DID publication', () => {
   })
 
   it('preserves both role relationships when issuer and verifier share one DID', async () => {
-    const { agent, plugin, registry } = await createHarness('both', DID_WEB)
+    const { agent, initialize, registry } = await createHarness('both', DID_WEB)
 
-    await plugin.initialize?.(agent as never, {} as never)
+    await initialize()
 
     const document = registry.document(DID_WEB)
     expect(relationshipIds(document.assertionMethod)).toContain(`${DID_WEB}#openid4vc-development-issuer`)
@@ -162,10 +165,10 @@ describe('development signing DID publication', () => {
   })
 
   it('reuses persisted development keys without updating an already-published DID', async () => {
-    const { agent, plugin, registry, options } = await createHarness('both', DID_WEB)
-    await plugin.initialize?.(agent as never, {} as never)
+    const { initialize, registry } = await createHarness('both', DID_WEB)
+    await initialize()
 
-    await OpenId4VcPlugin(options).initialize?.(agent as never, {} as never)
+    await initialize()
 
     expect(registry.updateCount).toBe(2)
     expect(relationshipIds(registry.document(DID_WEB).assertionMethod)).toContain(
@@ -177,31 +180,27 @@ describe('development signing DID publication', () => {
   })
 
   it('fails initialization when the agent-owned DID update fails', async () => {
-    const { agent, plugin, registry } = await createHarness('issuer', DID_WEB)
+    const { initialize, registry } = await createHarness('issuer', DID_WEB)
     registry.failUpdate = true
 
-    await expect(plugin.initialize?.(agent as never, {} as never)).rejects.toThrow(
-      'development signing key DID update failed',
-    )
+    await expect(initialize()).rejects.toThrow('development signing key DID update failed')
   })
 
   it('fails closed when resolution returns a different DID document', async () => {
-    const { agent, plugin, registry } = await createHarness('issuer', DID_WEB)
+    const { initialize, registry } = await createHarness('issuer', DID_WEB)
     registry.returnWrongDidFromResolution = true
 
-    await expect(plugin.initialize?.(agent as never, {} as never)).rejects.toThrow(
+    await expect(initialize()).rejects.toThrow(
       'development signing key DID resolution returned a different DID',
     )
     expect(registry.updateCount).toBe(0)
   })
 
   it('fails closed when the DID update result identifies a different DID', async () => {
-    const { agent, plugin, registry } = await createHarness('issuer', DID_WEB)
+    const { initialize, registry } = await createHarness('issuer', DID_WEB)
     registry.returnWrongDidFromUpdate = true
 
-    await expect(plugin.initialize?.(agent as never, {} as never)).rejects.toThrow(
-      'development signing key DID update returned a different DID',
-    )
+    await expect(initialize()).rejects.toThrow('development signing key DID update returned a different DID')
   })
 })
 
@@ -210,13 +209,17 @@ async function createHarness(
   did: string,
 ): Promise<{
   agent: TestAgent
-  plugin: ReturnType<typeof OpenId4VcPlugin>
+  initialize: () => Promise<void>
   registry: MutableDidRegistry
-  options: OpenId4VcPluginOptions
 }> {
   const options = developmentOptions(role)
-  const plugin = OpenId4VcPlugin(options)
-  if (!plugin.credoPlugin) throw new Error('OpenID4VC plugin did not expose Credo modules')
+  validateOpenId4VcOptions(options)
+
+  let issuerService: IssuerService | undefined
+  const sdkPlugin = setupOpenId4Vc(options, () => {
+    if (!issuerService) throw new Error('OpenID4VC issuer service is not initialized')
+    return issuerService
+  })
 
   const registry = new MutableDidRegistry(new Map([[did, initialDidDocument(did)]]))
   const agent = new Agent({
@@ -233,7 +236,7 @@ async function createHarness(
         },
       }),
       dids: new DidsModule({ resolvers: [registry], registrars: [registry] }),
-      ...plugin.credoPlugin.modules,
+      ...sdkPlugin.modules,
     },
   }) as TestAgent
   agent.did = did
@@ -245,7 +248,19 @@ async function createHarness(
       new DidRecord({ did, role: DidDocumentRole.Created, didDocument: initialDidDocument(did) }),
     )
   agents.push(agent)
-  return { agent, plugin, registry, options }
+
+  const initialize = async (): Promise<void> => {
+    const lifecycleAgent = agent as unknown as OpenId4VcIssuerAgent & OpenId4VcVerifierAgent
+    if (options.issuer) {
+      issuerService = new IssuerService(lifecycleAgent, options)
+      await issuerService.ensureInitialized()
+    }
+    if (options.verifier) {
+      await new VerifierService(lifecycleAgent, options).ensureInitialized()
+    }
+  }
+
+  return { agent, initialize, registry }
 }
 
 function developmentOptions(role: Role): OpenId4VcPluginOptions {

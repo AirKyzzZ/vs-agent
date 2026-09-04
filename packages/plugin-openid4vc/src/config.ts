@@ -10,10 +10,11 @@ import { X509Certificate, X509KeyUsage } from '@credo-ts/core'
 import { assertCertificateChainUsable } from './services/CertificateService'
 import { certificateFingerprint } from './trust/CertificateTrust'
 import { MAX_DID_RESOLUTION_TIMEOUT_MS } from './trust/keyBinding'
+import { isRecord } from './utils/isRecord'
 
 const MAX_TTL_SECONDS = 31_536_000
 const MIN_TTL_SECONDS = 60
-const RESERVED_CREDENTIAL_CLAIMS = new Set(['vct', 'iat', 'exp', 'iss', 'cnf'])
+const RESERVED_CREDENTIAL_CLAIMS = new Set(['vct', 'iat', 'exp', 'iss', 'cnf', 'status'])
 
 export function validateOpenId4VcOptions(options: OpenId4VcPluginOptions): void {
   assertHttpsUrl(options.publicApiBaseUrl, 'publicApiBaseUrl')
@@ -360,10 +361,6 @@ function assertNonEmptyString(value: unknown, field: string): asserts value is s
 
 function hasNonEmptyString(value: unknown): boolean {
   return Array.isArray(value) && value.some(item => typeof item === 'string' && item.trim())
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 function isEmptyClaim(value: unknown): boolean {

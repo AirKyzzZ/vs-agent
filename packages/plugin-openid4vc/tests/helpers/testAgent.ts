@@ -1,3 +1,5 @@
+import type { OpenId4VcIssuerAgent } from '../../src/services/IssuerService'
+import type { OpenId4VcVerifierAgent } from '../../src/services/VerifierService'
 import type { OpenId4VcCredentialConfiguration, OpenId4VcPluginOptions } from '../../src/types'
 import type { AskarModuleConfigStoreOptions, AskarSqliteStorageConfig } from '@credo-ts/askar'
 import type { DidResolver, Kms, SdJwtVc, X509Certificate } from '@credo-ts/core'
@@ -29,7 +31,8 @@ import {
 import express from 'express'
 import { webcrypto } from 'node:crypto'
 
-import { OpenId4VcPlugin } from '../../src/nestjs/OpenId4VcPlugin'
+import { validateOpenId4VcOptions } from '../../src/config'
+import { setupOpenId4Vc } from '../../src/sdk/setupOpenId4Vc'
 import { IssuerService } from '../../src/services/IssuerService'
 import { VerifierService } from '../../src/services/VerifierService'
 
@@ -212,7 +215,7 @@ export async function startOpenId4VcTestAgents(input: {
       credentialConfigurations: [input.credentialConfiguration],
       verifierPolicies: [],
     }),
-    serviceToken: IssuerService,
+    createService: (agent, options) => new IssuerService(agent, options),
     failureHooks: input.failureHooks,
   })
 
@@ -254,7 +257,7 @@ export async function startOpenId4VcTestAgents(input: {
           },
         ],
       }),
-      serviceToken: VerifierService,
+      createService: (agent, options) => new VerifierService(agent, options),
       failureHooks: input.failureHooks,
     })
 
@@ -272,12 +275,15 @@ export async function startOpenId4VcTestAgents(input: {
   }
 }
 
-async function startPluginAgent<Service>(input: {
+async function startPluginAgent<Service extends IssuerService | VerifierService>(input: {
   role: PluginAgentRole
   did: string
   didResolver: DidResolver
   options: (publicApiBaseUrl: string) => OpenId4VcPluginOptions
-  serviceToken: abstract new (...args: never[]) => Service
+  createService: (
+    agent: OpenId4VcIssuerAgent & OpenId4VcVerifierAgent,
+    options: OpenId4VcPluginOptions,
+  ) => Service
   failureHooks?: TestAgentFailureHooks
 }): Promise<{
   agent: TestAgentWithOpenId4Vc
@@ -288,16 +294,19 @@ async function startPluginAgent<Service>(input: {
   const app = express()
   let server: Server | undefined
   let agent: TestAgentWithOpenId4Vc | undefined
+  let service: Service | undefined
 
   try {
     server = await listen(app)
     const publicApiBaseUrl = serverUrl(server)
     await input.failureHooks?.beforeOptions?.(input.role)
     const options = input.options(publicApiBaseUrl)
-    const plugin = OpenId4VcPlugin(options)
-    if (!plugin.credoPlugin) throw new Error('OpenID4VC plugin did not expose Credo modules')
-    if (!plugin.publicMiddleware) throw new Error('OpenID4VC plugin did not expose public middleware')
-    app.use(plugin.publicMiddleware)
+    validateOpenId4VcOptions(options)
+    const sdkPlugin = setupOpenId4Vc(options, () => {
+      if (!(service instanceof IssuerService)) throw new Error('OpenID4VC issuer service is not initialized')
+      return service
+    })
+    app.use(sdkPlugin.publicMiddleware)
 
     const logger = new ConsoleLogger(LOG_LEVEL)
     agent = new Agent({
@@ -306,14 +315,14 @@ async function startPluginAgent<Service>(input: {
       modules: {
         askar: new AskarModule({ askar, store: askarStore(input.role) }),
         dids: new DidsModule({ resolvers: [input.didResolver] }),
-        ...plugin.credoPlugin.modules,
+        ...sdkPlugin.modules,
       },
     }) as unknown as TestAgentWithOpenId4Vc
     agent.did = input.did
     await agent.initialize()
     await input.failureHooks?.afterInitialize?.(input.role)
-    await plugin.initialize?.(agent as never, logger)
-    const service = pluginService(plugin.providers, input.serviceToken, agent)
+    service = input.createService(agent as unknown as OpenId4VcIssuerAgent & OpenId4VcVerifierAgent, options)
+    await service.ensureInitialized()
     return {
       agent,
       service,
@@ -398,31 +407,6 @@ async function startHolderAgent(
     },
     stop: createStop(agent),
   }
-}
-
-function pluginService<Service>(
-  providers: unknown[] | undefined,
-  token: abstract new (...args: never[]) => Service,
-  agent: TestAgentWithOpenId4Vc,
-): Service {
-  const provider = providers?.find(candidate => isFactoryProvider(candidate) && candidate.provide === token)
-  if (!provider || !isFactoryProvider(provider)) {
-    throw new Error(`OpenID4VC plugin did not register ${token.name}`)
-  }
-
-  return provider.useFactory(agent) as Service
-}
-
-function isFactoryProvider(
-  value: unknown,
-): value is { provide: unknown; useFactory: (agent: TestAgentWithOpenId4Vc) => unknown } {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'provide' in value &&
-    'useFactory' in value &&
-    typeof value.useFactory === 'function'
-  )
 }
 
 function askarStore(role: AgentRole): AskarModuleConfigStoreOptions {
