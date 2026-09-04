@@ -13,6 +13,7 @@ import {
 } from '@credo-ts/core'
 import { createHash } from 'node:crypto'
 
+import { certificateFingerprint } from '../trust/CertificateTrust'
 import { isRecord } from '../utils/isRecord'
 
 const DEVELOPMENT_CERTIFICATE_VALIDITY_MS = 365 * 24 * 60 * 60 * 1_000
@@ -42,11 +43,10 @@ export function signingCertificateInfo(
   role: SigningRole,
   handle: SigningCertificateHandle,
 ): SigningCertificateInfo {
-  const digest = createHash('sha256').update(handle.certificate.rawCertificate).digest('hex')
   return {
     role,
     development: handle.development,
-    fingerprint: `SHA256:${digest}`,
+    fingerprint: certificateFingerprint(handle.certificate),
     certificateChain: handle.chain.map(certificate => certificate.toString('base64')),
   }
 }

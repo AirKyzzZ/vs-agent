@@ -1,3 +1,5 @@
+import type { SigningRole } from '@verana-labs/vs-agent-plugin-openid4vc'
+
 import { ApiProperty } from '@nestjs/swagger'
 
 export class Openid4vcSigningCertificateDto {
@@ -5,7 +7,7 @@ export class Openid4vcSigningCertificateDto {
     enum: ['issuer', 'verifier'],
     description: 'The capability that signs with this certificate',
   })
-  role!: 'issuer' | 'verifier'
+  role!: SigningRole
 
   @ApiProperty({ description: 'True when the agent generated the certificate itself (development signing)' })
   development!: boolean
