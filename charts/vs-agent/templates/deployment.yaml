@@ -1,3 +1,6 @@
+{{- if and .Values.oid4vc.config .Values.oid4vc.existingSecret }}
+{{- fail "set either oid4vc.config or oid4vc.existingSecret, not both" }}
+{{- end }}
 # Service deployment for the VS Agent
 apiVersion: v1
 kind: Service
