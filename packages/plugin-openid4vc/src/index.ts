@@ -16,12 +16,13 @@ export type { SigningCertificateInfo, SigningRole } from './services/Certificate
 export {
   IssuerService,
   OpenId4VcIssuerRequestError,
-  OpenId4VcOfferNotFoundError,
+  UnknownCredentialConfigurationError,
+  UnknownIssuanceSessionError,
 } from './services/IssuerService'
 export type {
+  OpenId4VcIssuanceSessionSummary,
   OpenId4VcIssuerAgent,
   OpenId4VcOfferResult,
-  OpenId4VcOfferState,
 } from './services/IssuerService'
 export {
   OpenId4VcVerifierRequestError,

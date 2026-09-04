@@ -1,9 +1,14 @@
 import type { OpenId4VcPluginOptions } from '../src/types'
 
 import { AgentContext, ClaimFormat, RecordNotFoundError } from '@credo-ts/core'
+import { OpenId4VcIssuanceSessionRepository } from '@credo-ts/openid4vc'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { IssuerService } from '../src/services/IssuerService'
+import {
+  IssuerService,
+  UnknownCredentialConfigurationError,
+  UnknownIssuanceSessionError,
+} from '../src/services/IssuerService'
 
 const { loadSigningCertificate, publishDevelopmentSigningKey, verifyKeyBoundToDid } = vi.hoisted(() => ({
   loadSigningCertificate: vi.fn(),
@@ -65,7 +70,24 @@ function issuerApi() {
     updateIssuerMetadata: vi.fn(),
     createCredentialOffer: vi.fn(),
     getIssuanceSessionById: vi.fn(),
+    deleteIssuanceSessionById: vi.fn(),
     getIssuerMetadata: vi.fn().mockResolvedValue({ signedMetadataJwt: undefined }),
+  }
+}
+
+const sessionRepository = { findByQuery: vi.fn() }
+
+function issuanceSession(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'session-1',
+    issuerId: 'issuer',
+    state: 'OfferCreated',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: undefined,
+    expiresAt: new Date('2026-01-01T01:00:00.000Z'),
+    errorMessage: undefined,
+    credentialOfferPayload: { credential_configuration_ids: ['employee'] },
+    ...overrides,
   }
 }
 
@@ -92,7 +114,13 @@ function agent(api = issuerApi(), did: string | undefined = AGENT_DID, jws = jws
     genericRecords: {},
     kms: {},
     x509: {},
-    dependencyManager: { resolve: (token: unknown) => (token === AgentContext ? AGENT_CONTEXT : jws) },
+    dependencyManager: {
+      resolve: (token: unknown) => {
+        if (token === AgentContext) return AGENT_CONTEXT
+        if (token === OpenId4VcIssuanceSessionRepository) return sessionRepository
+        return jws
+      },
+    },
     modules: { openId4Vc: { issuer: api } },
   }
 }
@@ -600,21 +628,103 @@ describe('IssuerService', () => {
     api.getIssuerByIssuerId.mockResolvedValue({ issuerId: 'issuer' })
     api.getIssuanceSessionById.mockResolvedValue({
       id: 'session-id',
+      issuerId: 'issuer',
       state: 'OfferCreated',
       createdAt: new Date('2026-07-21T10:00:00.000Z'),
       expiresAt: new Date('2026-07-21T10:05:00.000Z'),
       preAuthorizedCode: 'secret-code',
       issuanceMetadata: { name: 'Ada', role: 'engineer' },
-      credentialOfferPayload: { grants: { secret: true } },
+      credentialOfferPayload: { credential_configuration_ids: ['employee'], grants: { secret: true } },
     })
     const service = new IssuerService(agent(api) as never, options())
     await service.ensureInitialized()
 
-    await expect(service.getOfferState('session-id')).resolves.toEqual({
+    await expect(service.getIssuanceSession('session-id')).resolves.toEqual({
       id: 'session-id',
+      credentialConfigurationId: 'employee',
       state: 'OfferCreated',
       createdAt: new Date('2026-07-21T10:00:00.000Z'),
+      updatedAt: new Date('2026-07-21T10:00:00.000Z'),
       expiresAt: new Date('2026-07-21T10:05:00.000Z'),
+    })
+  })
+
+  describe('issuance sessions', () => {
+    async function initialized() {
+      const api = issuerApi()
+      api.getIssuerByIssuerId.mockResolvedValue({ issuerId: 'issuer' })
+      const service = new IssuerService(agent(api) as never, options())
+      await service.ensureInitialized()
+      return { service, api }
+    }
+
+    it('reads a session of this issuer as a summary without claims, offer URL or code', async () => {
+      const { service, api } = await initialized()
+      api.getIssuanceSessionById.mockResolvedValue(
+        issuanceSession({ preAuthorizedCode: 'secret', issuanceMetadata: { name: 'Ada' } }),
+      )
+
+      const summary = await service.getIssuanceSession('session-1')
+
+      expect(summary).toEqual({
+        id: 'session-1',
+        credentialConfigurationId: 'employee',
+        state: 'OfferCreated',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        expiresAt: new Date('2026-01-01T01:00:00.000Z'),
+      })
+    })
+
+    it('reports an unknown or foreign session as unknown', async () => {
+      const { service, api } = await initialized()
+      api.getIssuanceSessionById.mockRejectedValueOnce(
+        new RecordNotFoundError('missing', { recordType: 'session' }),
+      )
+      await expect(service.getIssuanceSession('missing')).rejects.toBeInstanceOf(UnknownIssuanceSessionError)
+
+      api.getIssuanceSessionById.mockResolvedValueOnce(issuanceSession({ issuerId: 'other-issuer' }))
+      await expect(service.getIssuanceSession('session-1')).rejects.toBeInstanceOf(
+        UnknownIssuanceSessionError,
+      )
+    })
+
+    it('lists only the sessions of this issuer', async () => {
+      const { service } = await initialized()
+      sessionRepository.findByQuery.mockResolvedValue([
+        issuanceSession(),
+        issuanceSession({ id: 'session-2', state: 'Completed' }),
+      ])
+
+      const sessions = await service.listIssuanceSessions()
+
+      expect(sessionRepository.findByQuery).toHaveBeenCalledWith(expect.anything(), {
+        issuerId: 'issuer',
+      })
+      expect(sessions.map(session => [session.id, session.state])).toEqual([
+        ['session-1', 'OfferCreated'],
+        ['session-2', 'Completed'],
+      ])
+    })
+
+    it('deletes a session of this issuer and refuses a foreign one', async () => {
+      const { service, api } = await initialized()
+      api.getIssuanceSessionById.mockResolvedValueOnce(issuanceSession())
+      await service.deleteIssuanceSession('session-1')
+      expect(api.deleteIssuanceSessionById).toHaveBeenCalledWith('session-1')
+
+      api.getIssuanceSessionById.mockResolvedValueOnce(issuanceSession({ issuerId: 'other-issuer' }))
+      await expect(service.deleteIssuanceSession('session-1')).rejects.toBeInstanceOf(
+        UnknownIssuanceSessionError,
+      )
+      expect(api.deleteIssuanceSessionById).toHaveBeenCalledTimes(1)
+    })
+
+    it('rejects an offer for an unknown credential configuration with a dedicated error', async () => {
+      const { service } = await initialized()
+      await expect(service.createOffer('missing', { name: 'Ada', role: 'engineer' })).rejects.toBeInstanceOf(
+        UnknownCredentialConfigurationError,
+      )
     })
   })
 

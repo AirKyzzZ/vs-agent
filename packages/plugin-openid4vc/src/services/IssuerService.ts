@@ -14,6 +14,7 @@ import type {
 } from '@credo-ts/openid4vc'
 
 import { AgentContext, ClaimFormat, JwsService, RecordNotFoundError } from '@credo-ts/core'
+import { OpenId4VcIssuanceSessionRepository, OpenId4VcIssuanceSessionState } from '@credo-ts/openid4vc'
 
 import { findCredentialConfiguration, parseOfferClaims } from '../config'
 import {
@@ -39,6 +40,7 @@ type IssuerApi = Pick<
   | 'updateIssuerMetadata'
   | 'createCredentialOffer'
   | 'getIssuanceSessionById'
+  | 'deleteIssuanceSessionById'
   | 'getIssuerMetadata'
 >
 
@@ -64,15 +66,19 @@ export interface OpenId4VcOfferResult {
   issuanceSessionId: string
 }
 
-export interface OpenId4VcOfferState {
+export interface OpenId4VcIssuanceSessionSummary {
   id: string
-  state: OpenId4VcIssuanceSessionRecord['state']
+  credentialConfigurationId: string
+  state: OpenId4VcIssuanceSessionState
   createdAt: Date
+  updatedAt: Date
   expiresAt?: Date
+  errorMessage?: string
 }
 
 export class OpenId4VcIssuerRequestError extends Error {}
-export class OpenId4VcOfferNotFoundError extends Error {}
+export class UnknownCredentialConfigurationError extends Error {}
+export class UnknownIssuanceSessionError extends Error {}
 
 export class IssuerService {
   private initialization?: Promise<void>
@@ -104,7 +110,9 @@ export class IssuerService {
     await this.ensureInitialized()
     const configuration = findCredentialConfiguration(this.options, credentialConfigurationId)
     if (!configuration) {
-      throw new OpenId4VcIssuerRequestError(`unknown credential configuration '${credentialConfigurationId}'`)
+      throw new UnknownCredentialConfigurationError(
+        `unknown credential configuration '${credentialConfigurationId}'`,
+      )
     }
 
     let claims: Record<string, unknown>
@@ -124,25 +132,39 @@ export class IssuerService {
     return { credentialOffer, issuanceSessionId: issuanceSession.id }
   }
 
-  public async getOfferState(id: string): Promise<OpenId4VcOfferState> {
+  public async getIssuanceSession(id: string): Promise<OpenId4VcIssuanceSessionSummary> {
     await this.ensureInitialized()
+    return summarizeIssuanceSession(await this.findOwnedSession(id))
+  }
 
+  public async listIssuanceSessions(): Promise<OpenId4VcIssuanceSessionSummary[]> {
+    await this.ensureInitialized()
+    const repository = this.agent.dependencyManager.resolve(OpenId4VcIssuanceSessionRepository)
+    const agentContext = this.agent.dependencyManager.resolve(AgentContext)
+    const sessions = await repository.findByQuery(agentContext, { issuerId: this.issuerOptions().id })
+    return sessions.map(summarizeIssuanceSession)
+  }
+
+  public async deleteIssuanceSession(id: string): Promise<void> {
+    await this.ensureInitialized()
+    await this.findOwnedSession(id)
+    await this.issuerApi().deleteIssuanceSessionById(id)
+  }
+
+  private async findOwnedSession(id: string): Promise<OpenId4VcIssuanceSessionRecord> {
     let session: OpenId4VcIssuanceSessionRecord
     try {
       session = await this.issuerApi().getIssuanceSessionById(id)
     } catch (error) {
       if (error instanceof RecordNotFoundError) {
-        throw new OpenId4VcOfferNotFoundError(`OpenID4VC offer '${id}' was not found`)
+        throw new UnknownIssuanceSessionError(`unknown issuance session '${id}'`)
       }
       throw error
     }
-
-    return {
-      id: session.id,
-      state: session.state,
-      createdAt: session.createdAt,
-      ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+    if (session.issuerId !== this.issuerOptions().id) {
+      throw new UnknownIssuanceSessionError(`unknown issuance session '${id}'`)
     }
+    return session
   }
 
   /** Public signing-certificate material, for operators wiring verifier
@@ -417,6 +439,18 @@ export class IssuerService {
     if (!this.initialized || !this.signingCertificate) {
       throw new Error('OpenID4VC issuer service is not initialized')
     }
+  }
+}
+
+function summarizeIssuanceSession(session: OpenId4VcIssuanceSessionRecord): OpenId4VcIssuanceSessionSummary {
+  return {
+    id: session.id,
+    credentialConfigurationId: session.credentialOfferPayload.credential_configuration_ids?.[0] ?? '',
+    state: session.state,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt ?? session.createdAt,
+    ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+    ...(session.errorMessage ? { errorMessage: session.errorMessage } : {}),
   }
 }
 

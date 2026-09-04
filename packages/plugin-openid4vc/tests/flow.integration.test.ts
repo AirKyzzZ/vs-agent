@@ -7,6 +7,8 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { UnknownIssuanceSessionError } from '../src/services/IssuerService'
+
 import { createCertificateFixtures } from './helpers/certificates'
 import { didDocumentWithKey, MapDidResolver } from './helpers/didResolver'
 import { startResolverStub } from './helpers/resolverStub'
@@ -100,6 +102,30 @@ describe('in-process OpenID4VC issuance and presentation', () => {
     const records = await agents.holder.agent.sdJwtVc.getAll()
     expect(records).toHaveLength(1)
     expect(records[0].firstCredential.claimFormat).toBe('dc+sd-jwt')
+  }, 60_000)
+
+  it('lists, reads and deletes the issuance sessions of this issuer', async () => {
+    const offer = await agents.issuer.service.createOffer(CONFIGURATION.id, {
+      name: 'Grace Hopper',
+      role: 'admiral',
+    })
+
+    const listed = await agents.issuer.service.listIssuanceSessions()
+    expect(listed.map(session => session.id)).toContain(offer.issuanceSessionId)
+
+    const read = await agents.issuer.service.getIssuanceSession(offer.issuanceSessionId)
+    expect(read).toMatchObject({
+      id: offer.issuanceSessionId,
+      credentialConfigurationId: CONFIGURATION.id,
+      state: 'OfferCreated',
+    })
+    expect(read.expiresAt).toBeInstanceOf(Date)
+    expect(read).not.toHaveProperty('credentialOffer')
+
+    await agents.issuer.service.deleteIssuanceSession(offer.issuanceSessionId)
+    await expect(agents.issuer.service.getIssuanceSession(offer.issuanceSessionId)).rejects.toBeInstanceOf(
+      UnknownIssuanceSessionError,
+    )
   }, 60_000)
 
   it('presents the stored credential through DCQL and returns TRUSTED_AUTHORIZED', async () => {
