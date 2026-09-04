@@ -1,1 +1,1 @@
-export {}
+export * from './credential-exchange.dto'
