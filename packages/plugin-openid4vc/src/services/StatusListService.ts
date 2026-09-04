@@ -30,6 +30,8 @@ interface StatusListState {
   revoked: number[]
 }
 
+export class StatusListEntryNotFoundError extends Error {}
+
 /**
  * Owns one Token Status List for the issuer: allocates an index per issued credential, serves the
  * signed status list token, and flips a bit on revocation. The signed JWT is the source of truth
@@ -93,7 +95,9 @@ export class StatusListService {
       const state = this.requireState()
       const indices = state.sessionIndices[issuanceSessionId]
       if (!indices || indices.length === 0) {
-        throw new Error(`no issued credential found for session '${issuanceSessionId}'`)
+        throw new StatusListEntryNotFoundError(
+          `no issued credential found for session '${issuanceSessionId}'`,
+        )
       }
       const toRevoke = indices.filter(index => !state.revoked.includes(index))
       if (toRevoke.length > 0) {

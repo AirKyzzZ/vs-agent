@@ -31,7 +31,7 @@ import {
   type SigningCertificateHandle,
   type SigningCertificateInfo,
 } from './CertificateService'
-import { StatusListService } from './StatusListService'
+import { StatusListEntryNotFoundError, StatusListService } from './StatusListService'
 
 type IssuerApi = Pick<
   OpenId4VcIssuerApi,
@@ -79,6 +79,13 @@ export interface OpenId4VcIssuanceSessionSummary {
 export class OpenId4VcIssuerRequestError extends Error {}
 export class UnknownCredentialConfigurationError extends Error {}
 export class UnknownIssuanceSessionError extends Error {}
+export class OpenId4VcRevocationDisabledError extends Error {}
+export class OpenId4VcIssuanceSessionStateError extends Error {}
+
+const REVOCABLE_STATES = new Set<OpenId4VcIssuanceSessionState>([
+  OpenId4VcIssuanceSessionState.Completed,
+  OpenId4VcIssuanceSessionState.CredentialsPartiallyIssued,
+])
 
 export class IssuerService {
   private initialization?: Promise<void>
@@ -235,7 +242,7 @@ export class IssuerService {
       vct: configuration.vct,
       iat: issuedAt,
       exp: issuedAt + configuration.ttlSeconds,
-      ...(status ?? {}),
+      ...(status ? { status } : {}),
     }
 
     return {
@@ -316,9 +323,24 @@ export class IssuerService {
   }
 
   /** Revoke every credential issued for `issuanceSessionId`. Idempotent. */
-  public revokeIssuanceSession(issuanceSessionId: string): Promise<number[]> {
-    if (!this.statusListService) throw new OpenId4VcIssuerRequestError('revocation is not enabled')
-    return this.statusListService.revoke(issuanceSessionId)
+  public async revokeIssuanceSession(id: string): Promise<void> {
+    await this.ensureInitialized()
+    if (!this.statusListService) throw new OpenId4VcRevocationDisabledError('revocation is not enabled')
+
+    const session = await this.findOwnedSession(id)
+    if (!REVOCABLE_STATES.has(session.state)) {
+      throw new OpenId4VcIssuanceSessionStateError(
+        `issuance session '${id}' has issued no credential yet (state ${session.state})`,
+      )
+    }
+
+    try {
+      await this.statusListService.revoke(id)
+    } catch (error) {
+      if (error instanceof StatusListEntryNotFoundError)
+        throw new OpenId4VcIssuanceSessionStateError(error.message)
+      throw error
+    }
   }
 
   private async buildMetadataSigner(signingCertificate: SigningCertificateHandle) {

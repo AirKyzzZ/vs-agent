@@ -5,16 +5,20 @@ import { OpenId4VcVerificationSessionRepository } from '@credo-ts/openid4vc'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  OpenId4VcVerifierRequestError,
   UnknownVerificationSessionError,
   UnknownVerifierPolicyError,
   VerifierService,
 } from '../src/services/VerifierService'
 
-const { loadSigningCertificate, verifyKeyBoundToDid, verdictFor } = vi.hoisted(() => ({
-  loadSigningCertificate: vi.fn(),
-  verifyKeyBoundToDid: vi.fn(),
-  verdictFor: vi.fn(),
-}))
+const { loadSigningCertificate, verifyKeyBoundToDid, verdictFor, findBoundVerificationMethodId } = vi.hoisted(
+  () => ({
+    loadSigningCertificate: vi.fn(),
+    verifyKeyBoundToDid: vi.fn(),
+    verdictFor: vi.fn(),
+    findBoundVerificationMethodId: vi.fn(),
+  }),
+)
 
 vi.mock('../src/services/CertificateService', async importOriginal => ({
   ...(await importOriginal<typeof import('../src/services/CertificateService')>()),
@@ -23,6 +27,7 @@ vi.mock('../src/services/CertificateService', async importOriginal => ({
 vi.mock('../src/trust/keyBinding', async importOriginal => ({
   ...(await importOriginal<typeof import('../src/trust/keyBinding')>()),
   verifyKeyBoundToDid,
+  findBoundVerificationMethodId,
 }))
 vi.mock('../src/trust/TrustClient', () => ({
   TrustClient: class {
@@ -206,6 +211,20 @@ function trust(verdict: 'TRUSTED_AUTHORIZED' | 'TRUSTED_NOT_AUTHORIZED' | 'RESOL
       queries: ['https://resolver.example/safe-evidence'],
     },
   }
+}
+
+async function initialized(
+  overrides: { verifier?: Partial<NonNullable<OpenId4VcPluginOptions['verifier']>> } = {},
+) {
+  const api = verifierApi()
+  api.getVerifierByVerifierId.mockResolvedValue({ verifierId: 'verifier' })
+
+  const configured = options()
+  if (overrides.verifier && configured.verifier) Object.assign(configured.verifier, overrides.verifier)
+
+  const service = new VerifierService(agent(api) as never, configured)
+  await service.ensureInitialized()
+  return { service, api }
 }
 
 describe('VerifierService', () => {
@@ -592,14 +611,6 @@ describe('VerifierService', () => {
   })
 
   describe('verification sessions', () => {
-    async function initialized(overrides: { options?: OpenId4VcPluginOptions } = {}) {
-      const api = verifierApi()
-      api.getVerifierByVerifierId.mockResolvedValue({ verifierId: 'verifier' })
-      const service = new VerifierService(agent(api) as never, overrides.options ?? options())
-      await service.ensureInitialized()
-      return { service, api }
-    }
-
     it('stores the policy id on the session it creates', async () => {
       const { service, api } = await initialized()
       let tag: unknown
@@ -759,6 +770,33 @@ describe('VerifierService', () => {
         UnknownVerificationSessionError,
       )
       expect(api.deleteVerificationSessionById).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('DID request signer', () => {
+    it('signs a DCQL request with the DID when requestSigner is did', async () => {
+      findBoundVerificationMethodId.mockResolvedValue(`${AGENT_DID}#openid4vc-verifier`)
+      const { service, api } = await initialized({ verifier: { requestSigner: 'did' } })
+      api.createAuthorizationRequest.mockResolvedValue({
+        authorizationRequest: 'openid4vp://r',
+        verificationSession: verificationSession(),
+      })
+
+      await service.createRequest('employee-name')
+
+      expect(api.createAuthorizationRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestSigner: { method: 'did', didUrl: `${AGENT_DID}#openid4vc-verifier` },
+        }),
+      )
+    })
+
+    it('fails a did-signed request when the DID does not publish the signing key', async () => {
+      findBoundVerificationMethodId.mockResolvedValue(null)
+      const { service } = await initialized({ verifier: { requestSigner: 'did' } })
+      await expect(service.createRequest('employee-name')).rejects.toBeInstanceOf(
+        OpenId4VcVerifierRequestError,
+      )
     })
   })
 })

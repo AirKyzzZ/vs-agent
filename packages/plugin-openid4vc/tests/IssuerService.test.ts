@@ -1,19 +1,27 @@
 import type { OpenId4VcPluginOptions } from '../src/types'
 
-import { AgentContext, ClaimFormat, RecordNotFoundError } from '@credo-ts/core'
+import { AgentContext, ClaimFormat, RecordNotFoundError, TokenStatusListApi } from '@credo-ts/core'
 import { OpenId4VcIssuanceSessionRepository } from '@credo-ts/openid4vc'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   IssuerService,
+  OpenId4VcIssuanceSessionStateError,
+  OpenId4VcRevocationDisabledError,
   UnknownCredentialConfigurationError,
   UnknownIssuanceSessionError,
 } from '../src/services/IssuerService'
 
-const { loadSigningCertificate, publishDevelopmentSigningKey, verifyKeyBoundToDid } = vi.hoisted(() => ({
+const {
+  loadSigningCertificate,
+  publishDevelopmentSigningKey,
+  verifyKeyBoundToDid,
+  findBoundVerificationMethodId,
+} = vi.hoisted(() => ({
   loadSigningCertificate: vi.fn(),
   publishDevelopmentSigningKey: vi.fn(),
   verifyKeyBoundToDid: vi.fn(),
+  findBoundVerificationMethodId: vi.fn(),
 }))
 
 vi.mock('../src/services/CertificateService', async importOriginal => ({
@@ -24,6 +32,7 @@ vi.mock('../src/services/CertificateService', async importOriginal => ({
 vi.mock('../src/trust/keyBinding', async importOriginal => ({
   ...(await importOriginal<typeof import('../src/trust/keyBinding')>()),
   verifyKeyBoundToDid,
+  findBoundVerificationMethodId,
 }))
 
 const AGENT_DID = 'did:web:agent.example'
@@ -107,17 +116,22 @@ function jwsService() {
   return { createJwsCompact: vi.fn().mockResolvedValue('re-signed.metadata.jwt') }
 }
 
+function statusListApi() {
+  return { createTokenStatusList: vi.fn().mockResolvedValue({ statusList: 'eyJ.status.list' }) }
+}
+
 function agent(api = issuerApi(), did: string | undefined = AGENT_DID, jws = jwsService()) {
   return {
     did,
     dids: { resolve: vi.fn() },
-    genericRecords: {},
+    genericRecords: { findById: vi.fn().mockResolvedValue(null), save: vi.fn(), update: vi.fn() },
     kms: {},
     x509: {},
     dependencyManager: {
       resolve: (token: unknown) => {
         if (token === AgentContext) return AGENT_CONTEXT
         if (token === OpenId4VcIssuanceSessionRepository) return sessionRepository
+        if (token === TokenStatusListApi) return statusListApi()
         return jws
       },
     },
@@ -143,6 +157,29 @@ function signingHandle() {
     keyId: 'issuer-key',
     development: false,
   }
+}
+
+async function initialized(
+  overrides: {
+    revocation?: OpenId4VcPluginOptions['revocation']
+    issuer?: Partial<NonNullable<OpenId4VcPluginOptions['issuer']>>
+    issuerMissing?: boolean
+  } = {},
+) {
+  const api = issuerApi()
+  if (overrides.issuerMissing) {
+    api.getIssuerByIssuerId.mockRejectedValue(new RecordNotFoundError('missing', { recordType: 'issuer' }))
+  } else {
+    api.getIssuerByIssuerId.mockResolvedValue({ issuerId: 'issuer' })
+  }
+
+  const configured = options()
+  if (overrides.revocation) configured.revocation = overrides.revocation
+  if (overrides.issuer && configured.issuer) Object.assign(configured.issuer, overrides.issuer)
+
+  const service = new IssuerService(agent(api) as never, configured)
+  await service.ensureInitialized()
+  return { service, api }
 }
 
 describe('IssuerService', () => {
@@ -650,14 +687,6 @@ describe('IssuerService', () => {
   })
 
   describe('issuance sessions', () => {
-    async function initialized() {
-      const api = issuerApi()
-      api.getIssuerByIssuerId.mockResolvedValue({ issuerId: 'issuer' })
-      const service = new IssuerService(agent(api) as never, options())
-      await service.ensureInitialized()
-      return { service, api }
-    }
-
     it('reads a session of this issuer as a summary without claims, offer URL or code', async () => {
       const { service, api } = await initialized()
       api.getIssuanceSessionById.mockResolvedValue(
@@ -750,5 +779,41 @@ describe('IssuerService', () => {
     })
     expect(metadata).not.toHaveProperty('credentialSchema')
     expect(service.getVctMetadata('unknown')).toBeUndefined()
+  })
+
+  describe('revocation', () => {
+    it('refuses to revoke when revocation is not enabled', async () => {
+      const { service } = await initialized()
+      await expect(service.revokeIssuanceSession('session-1')).rejects.toBeInstanceOf(
+        OpenId4VcRevocationDisabledError,
+      )
+    })
+
+    it('refuses to revoke a session that issued nothing yet', async () => {
+      const { service, api } = await initialized({ revocation: { enabled: true } })
+      api.getIssuanceSessionById.mockResolvedValue(issuanceSession({ state: 'OfferCreated' }))
+      await expect(service.revokeIssuanceSession('session-1')).rejects.toBeInstanceOf(
+        OpenId4VcIssuanceSessionStateError,
+      )
+    })
+  })
+
+  describe('DID metadata signer', () => {
+    it('creates the issuer with a did signer when the DID publishes the key for authentication', async () => {
+      findBoundVerificationMethodId.mockResolvedValue(`${AGENT_DID}#openid4vc-issuer`)
+      const { api } = await initialized({ issuer: { metadataSigner: 'did' }, issuerMissing: true })
+      expect(api.createIssuer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadataSigner: { method: 'did', didUrl: `${AGENT_DID}#openid4vc-issuer` },
+        }),
+      )
+    })
+
+    it('refuses to start when the DID does not publish the signing key for authentication', async () => {
+      findBoundVerificationMethodId.mockResolvedValue(null)
+      await expect(initialized({ issuer: { metadataSigner: 'did' }, issuerMissing: true })).rejects.toThrow(
+        'does not publish the signing key for authentication',
+      )
+    })
   })
 })

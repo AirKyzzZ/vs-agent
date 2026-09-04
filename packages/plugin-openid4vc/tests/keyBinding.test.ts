@@ -3,7 +3,11 @@ import type { BaseAgent, DidDocument, VerificationMethod } from '@credo-ts/core'
 import { describe, expect, it, vi } from 'vitest'
 
 import { TrustClient } from '../src/trust/TrustClient'
-import { blockingBindingVerdict, verifyKeyBoundToDid } from '../src/trust/keyBinding'
+import {
+  blockingBindingVerdict,
+  findBoundVerificationMethodId,
+  verifyKeyBoundToDid,
+} from '../src/trust/keyBinding'
 
 import { LEAF_PRIVATE_JWK, OTHER_PRIVATE_JWK } from './helpers/certificates'
 
@@ -264,6 +268,44 @@ describe('verifyKeyBoundToDid', () => {
     await expect(
       verifyKeyBoundToDid(agent, DID, LEAF_PUBLIC_JWK, ['assertionMethod'], DID_RESOLUTION_POLICY),
     ).resolves.toBe('unresolvable')
+  })
+})
+
+describe('findBoundVerificationMethodId', () => {
+  it('returns the id of the method under the purpose that carries the certificate key', async () => {
+    const agent = agentResolving(async () => ({
+      didDocument: didDocument({ authentication: [verificationMethod(LEAF_PUBLIC_JWK, `${DID}#auth`)] }),
+    }))
+
+    await expect(
+      findBoundVerificationMethodId(agent, DID, LEAF_PUBLIC_JWK, ['authentication'], DID_RESOLUTION_POLICY),
+    ).resolves.toBe(`${DID}#auth`)
+  })
+
+  it('returns null when no method under the purpose carries the key', async () => {
+    const agent = agentResolving(async () => ({
+      didDocument: didDocument({ authentication: [verificationMethod(OTHER_PUBLIC_JWK, `${DID}#auth`)] }),
+    }))
+
+    await expect(
+      findBoundVerificationMethodId(agent, DID, LEAF_PUBLIC_JWK, ['authentication'], DID_RESOLUTION_POLICY),
+    ).resolves.toBeNull()
+  })
+
+  it('returns null for a host outside the resolution policy without resolving', async () => {
+    const resolve = vi.fn()
+    const agent = agentResolving(resolve)
+
+    await expect(
+      findBoundVerificationMethodId(
+        agent,
+        'did:web:attacker.example',
+        LEAF_PUBLIC_JWK,
+        ['authentication'],
+        DID_RESOLUTION_POLICY,
+      ),
+    ).resolves.toBeNull()
+    expect(resolve).not.toHaveBeenCalled()
   })
 })
 

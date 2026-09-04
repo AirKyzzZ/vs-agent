@@ -64,7 +64,7 @@ class MutableDidRegistry {
     return { didDocument, didDocumentMetadata: {}, didResolutionMetadata: {} }
   }
 
-  public async update(_agentContext: AgentContext, options: DidUpdateOptions): Promise<DidUpdateResult> {
+  public async update(agentContext: AgentContext, options: DidUpdateOptions): Promise<DidUpdateResult> {
     this.updateCount += 1
     if (this.failUpdate) {
       return {
@@ -76,12 +76,27 @@ class MutableDidRegistry {
 
     const didDocument = cloneDidDocument(options.didDocument as DidDocument)
     const resultDid = this.returnWrongDidFromUpdate ? 'did:web:wrong.example' : options.did
-    if (!this.returnWrongDidFromUpdate) this.documents.set(options.did, didDocument)
+    if (!this.returnWrongDidFromUpdate) {
+      this.documents.set(options.did, didDocument)
+      await this.refreshCreatedDidRecord(agentContext, options.did, didDocument)
+    }
     return {
       didState: { state: 'finished', did: resultDid, didDocument },
       didDocumentMetadata: {},
       didRegistrationMetadata: {},
     }
+  }
+
+  private async refreshCreatedDidRecord(
+    agentContext: AgentContext,
+    did: string,
+    didDocument: DidDocument,
+  ): Promise<void> {
+    const didRepository = agentContext.dependencyManager.resolve(DidRepository)
+    const didRecord = await didRepository.findCreatedDid(agentContext, did)
+    if (!didRecord) return
+    didRecord.didDocument = didDocument
+    await didRepository.update(agentContext, didRecord)
   }
 
   public async create(): Promise<DidCreateResult> {
@@ -127,6 +142,17 @@ describe('development signing DID publication', () => {
     expect(await createdDidRecordKeys(agent, DID_WEB)).toEqual([
       { didDocumentRelativeKeyId: '#openid4vc-development-issuer', kmsKeyId: expect.any(String) },
     ])
+  })
+
+  it('publishes the issuer key under authentication as well when metadataSigner is did', async () => {
+    const { initialize, registry } = await createHarness('issuer', DID_WEB, { metadataSigner: 'did' })
+
+    await initialize()
+
+    const document = registry.document(DID_WEB)
+    const methodId = `${DID_WEB}#openid4vc-development-issuer`
+    expect(relationshipIds(document.assertionMethod)).toContain(methodId)
+    expect(relationshipIds(document.authentication)).toContain(methodId)
   })
 
   it('publishes the generated verifier key through the generic DID API for did:webvh', async () => {
@@ -207,12 +233,14 @@ describe('development signing DID publication', () => {
 async function createHarness(
   role: Role,
   did: string,
+  issuerOverrides: Partial<NonNullable<OpenId4VcPluginOptions['issuer']>> = {},
 ): Promise<{
   agent: TestAgent
   initialize: () => Promise<void>
   registry: MutableDidRegistry
 }> {
   const options = developmentOptions(role)
+  if (options.issuer) Object.assign(options.issuer, issuerOverrides)
   validateOpenId4VcOptions(options)
 
   let issuerService: IssuerService | undefined

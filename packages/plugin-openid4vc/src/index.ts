@@ -15,7 +15,9 @@ export type {
 export type { SigningCertificateInfo, SigningRole } from './services/CertificateService'
 export {
   IssuerService,
+  OpenId4VcIssuanceSessionStateError,
   OpenId4VcIssuerRequestError,
+  OpenId4VcRevocationDisabledError,
   UnknownCredentialConfigurationError,
   UnknownIssuanceSessionError,
 } from './services/IssuerService'
