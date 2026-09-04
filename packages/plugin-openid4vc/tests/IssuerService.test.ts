@@ -404,9 +404,6 @@ describe('IssuerService', () => {
     )
     expect(api.getIssuerByIssuerId).toHaveBeenCalledOnce()
     expect(api.updateIssuerMetadata).toHaveBeenCalledOnce()
-    expect(api.updateIssuerMetadata).not.toHaveBeenCalledWith(
-      expect.objectContaining({ metadataSigner: expect.anything() }),
-    )
     expect(api.createIssuer).not.toHaveBeenCalled()
   })
 
@@ -813,6 +810,27 @@ describe('IssuerService', () => {
       findBoundVerificationMethodId.mockResolvedValue(null)
       await expect(initialized({ issuer: { metadataSigner: 'did' }, issuerMissing: true })).rejects.toThrow(
         'does not publish the signing key for authentication',
+      )
+    })
+
+    it('refreshes the did signer on an issuer record that already exists', async () => {
+      findBoundVerificationMethodId.mockResolvedValue(`${AGENT_DID}#openid4vc-issuer`)
+      const { api } = await initialized({ issuer: { metadataSigner: 'did' } })
+      expect(api.createIssuer).not.toHaveBeenCalled()
+      expect(api.updateIssuerMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadataSigner: { method: 'did', didUrl: `${AGENT_DID}#openid4vc-issuer` },
+        }),
+      )
+    })
+
+    it('refreshes the x5c signer on an issuer record that already exists', async () => {
+      const { api } = await initialized({ issuer: { metadataSigner: 'x5c' } })
+      expect(api.createIssuer).not.toHaveBeenCalled()
+      expect(api.updateIssuerMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadataSigner: { method: 'x5c', x5c: [leafCertificate] },
+        }),
       )
     })
   })

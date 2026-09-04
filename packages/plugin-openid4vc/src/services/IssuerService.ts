@@ -377,7 +377,10 @@ export class IssuerService {
       return
     }
 
-    await this.issuerApi().updateIssuerMetadata(metadata)
+    await this.issuerApi().updateIssuerMetadata({
+      ...metadata,
+      metadataSigner: await this.buildMetadataSigner(signingCertificate),
+    })
   }
 
   private credentialConfigurationsSupported(): OpenId4VciCredentialConfigurationsSupportedWithFormats {
