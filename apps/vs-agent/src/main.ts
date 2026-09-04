@@ -89,6 +89,7 @@ import {
   TsLogger,
   webhookEvent,
 } from './utils'
+import { initializeNestPlugins, mountPublicPluginMiddleware } from './utils/pluginLifecycle'
 
 export const startServers = async (agent: VsAgent, serverConfig: ServerConfig) => {
   const { port, cors, publicApiBaseUrl, nestPlugins = [], bootstrapState } = serverConfig
@@ -115,6 +116,7 @@ export const startServers = async (agent: VsAgent, serverConfig: ServerConfig) =
     logger: nestLogLevels,
   })
   commonAppConfig(publicApp, cors, true)
+  mountPublicPluginMiddleware(publicApp.getHttpAdapter().getInstance(), nestPlugins)
 
   // Send environment to UI
   const publicDir = path.join(__dirname, '../../public')
@@ -390,6 +392,7 @@ const run = async () => {
     veranaChain,
     authorizationService,
     adminApiServiceEndpoint,
+    nestPlugins,
   })
 
   const bootstrapState = new BootstrapState()
@@ -407,6 +410,7 @@ const run = async () => {
     nestPlugins,
     bootstrapState,
   }
+  await initializeNestPlugins(nestPlugins, agent, serverLogger)
   const { httpServer, webSocketServer } = await startServers(agent, conf)
 
   if (agent.did) {
