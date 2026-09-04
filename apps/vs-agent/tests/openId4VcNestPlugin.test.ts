@@ -91,6 +91,15 @@ describe('OpenId4VcNestPlugin', () => {
     ).toBe(true)
   })
 
+  it('provides only the verifier service when the issuer capability is absent', () => {
+    const verifierOnly = options()
+    verifierOnly.issuer = undefined
+
+    expect(providers(OpenId4VcNestPlugin(verifierOnly)).map(provider => provider.provide)).toEqual([
+      VerifierService,
+    ])
+  })
+
   it('exposes the credo modules and the public middleware', () => {
     const plugin = OpenId4VcNestPlugin(options())
 
