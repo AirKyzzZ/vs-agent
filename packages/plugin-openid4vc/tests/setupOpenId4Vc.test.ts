@@ -276,4 +276,55 @@ describe('setupOpenId4Vc', () => {
       })),
     ).toThrowError(/^issuer\.walletAttestationCertificates\[1\] must be a valid X\.509 certificate$/)
   })
+
+  it('mounts only public VCT metadata and no credential-offer or credential-exchange route', async () => {
+    const setup = setupOpenId4Vc(validOptions(), () => ({
+      getVctMetadata: id =>
+        id === 'employee'
+          ? {
+              vct: 'https://agent.example/oid4vc/vct/employee',
+              name: 'Employee credential',
+              display: [{ locale: 'en', name: 'Employee credential' }],
+              claims: [{ path: ['name'] }, { path: ['role'] }],
+            }
+          : undefined,
+      getSignedMetadataJwt: () => undefined,
+      getJwtVcIssuerMetadata: () => ({}),
+      mapCredentialRequest: () => {
+        throw new Error('not implemented')
+      },
+    }))
+
+    const metadata = await request(setup.publicMiddleware).get('/oid4vc/vct/employee')
+    const unknown = await request(setup.publicMiddleware).get('/oid4vc/vct/unknown')
+    const create = await request(setup.publicMiddleware).post('/v2/openid4vc/credential-offer').send({})
+    const list = await request(setup.publicMiddleware).get('/v2/openid4vc/credential-exchanges')
+
+    expect(metadata.status).toBe(200)
+    expect(metadata.body.vct).toBe('https://agent.example/oid4vc/vct/employee')
+    expect(unknown.status).toBe(404)
+    expect(create.status).toBe(404)
+    expect(list.status).toBe(404)
+  })
+
+  it('does not mount verifier presentation or holder routes on the public middleware', async () => {
+    const setup = setupOpenId4Vc(validOptions(), () => ({
+      getVctMetadata: () => undefined,
+      getSignedMetadataJwt: () => undefined,
+      getJwtVcIssuerMetadata: () => ({}),
+      mapCredentialRequest: () => {
+        throw new Error('not implemented')
+      },
+    }))
+
+    const requestRoute = await request(setup.publicMiddleware)
+      .post('/v2/openid4vc/presentation-request')
+      .send({})
+    const resultRoute = await request(setup.publicMiddleware).get('/v2/openid4vc/presentations/abc')
+    const holderRoute = await request(setup.publicMiddleware).get('/v1/oid4vc/holder/credentials')
+
+    expect(requestRoute.status).toBe(404)
+    expect(resultRoute.status).toBe(404)
+    expect(holderRoute.status).toBe(404)
+  })
 })
