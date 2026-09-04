@@ -353,7 +353,7 @@ describe('setupOpenId4Vc', () => {
 
     const found = await request(plugin.publicMiddleware).get('/oid4vc/status-list/list-1')
     expect(found.status).toBe(200)
-    expect(found.headers['content-type']).toContain('application/statuslist+jwt')
+    expect(found.headers['content-type']).toBe('application/statuslist+jwt')
     expect(found.headers['cache-control']).toBe('no-store')
     expect(found.text).toBe('eyJ.status.list')
 

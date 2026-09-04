@@ -8,13 +8,14 @@ import type {
 } from '@credo-ts/core'
 import type {
   OpenId4VcIssuanceSessionRecord,
+  OpenId4VcIssuanceSessionState,
   OpenId4VcIssuerApi,
   OpenId4VciCredentialConfigurationsSupportedWithFormats,
   OpenId4VciCredentialRequestToCredentialMapper,
 } from '@credo-ts/openid4vc'
 
 import { AgentContext, ClaimFormat, JwsService, RecordNotFoundError } from '@credo-ts/core'
-import { OpenId4VcIssuanceSessionRepository, OpenId4VcIssuanceSessionState } from '@credo-ts/openid4vc'
+import { OpenId4VcIssuanceSessionRepository } from '@credo-ts/openid4vc'
 
 import { findCredentialConfiguration, parseOfferClaims } from '../config'
 import {
@@ -81,11 +82,6 @@ export class UnknownCredentialConfigurationError extends Error {}
 export class UnknownIssuanceSessionError extends Error {}
 export class OpenId4VcRevocationDisabledError extends Error {}
 export class OpenId4VcIssuanceSessionStateError extends Error {}
-
-const REVOCABLE_STATES = new Set<OpenId4VcIssuanceSessionState>([
-  OpenId4VcIssuanceSessionState.Completed,
-  OpenId4VcIssuanceSessionState.CredentialsPartiallyIssued,
-])
 
 export class IssuerService {
   private initialization?: Promise<void>
@@ -327,12 +323,7 @@ export class IssuerService {
     await this.ensureInitialized()
     if (!this.statusListService) throw new OpenId4VcRevocationDisabledError('revocation is not enabled')
 
-    const session = await this.findOwnedSession(id)
-    if (!REVOCABLE_STATES.has(session.state)) {
-      throw new OpenId4VcIssuanceSessionStateError(
-        `issuance session '${id}' has issued no credential yet (state ${session.state})`,
-      )
-    }
+    await this.findOwnedSession(id)
 
     try {
       await this.statusListService.revoke(id)

@@ -80,7 +80,7 @@ describe('status list revocation', () => {
 
     const before = await fetch(status.status_list.uri)
     expect(before.status).toBe(200)
-    expect(before.headers.get('content-type')).toContain('application/statuslist+jwt')
+    expect(before.headers.get('content-type')).toBe('application/statuslist+jwt')
     expect(getListFromStatusListJWT(await before.text()).getStatus(status.status_list.idx)).toBe(0)
 
     await agents.issuer.service.revokeIssuanceSession(sessionId)

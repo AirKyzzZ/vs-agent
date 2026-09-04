@@ -791,7 +791,7 @@ describe('IssuerService', () => {
 
     it('refuses to revoke a session that issued nothing yet', async () => {
       const { service, api } = await initialized({ revocation: { enabled: true } })
-      api.getIssuanceSessionById.mockResolvedValue(issuanceSession({ state: 'OfferCreated' }))
+      api.getIssuanceSessionById.mockResolvedValue(issuanceSession({ state: 'Completed' }))
       await expect(service.revokeIssuanceSession('session-1')).rejects.toBeInstanceOf(
         OpenId4VcIssuanceSessionStateError,
       )

@@ -89,7 +89,9 @@ export function setupOpenId4Vc(
           response.status(404).json({ message: 'status list not found' })
           return
         }
-        response.set('Cache-Control', 'no-store').type('application/statuslist+jwt').send(token)
+        response.setHeader('Cache-Control', 'no-store')
+        response.setHeader('Content-Type', 'application/statuslist+jwt')
+        response.end(token)
       } catch (error) {
         next(error)
       }
