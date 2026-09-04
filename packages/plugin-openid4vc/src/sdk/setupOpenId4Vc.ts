@@ -53,11 +53,7 @@ export function setupOpenId4Vc(
   if (options.issuer) app.use(serveCertificateBoundIssuerMetadata(getIssuerService))
   if (options.issuer) app.use(express.json(), acceptDraftCredentialRequests(options.credentialConfigurations))
   if (options.issuer) {
-    // Credo serves no SD-JWT VC issuer metadata, and a wallet that anchors an x5c-signed
-    // credential on the issuer origin rather than on the DID has nowhere else to look.
-    // RFC 8615 puts the issuer path AFTER the well-known segment, so a holder whose issuer
-    // identifier carries a path asks for `/.well-known/jwt-vc-issuer/oid4vci/<id>`. Answering
-    // only the bare form makes every issuance show a metadata-fetch failure.
+    // RFC 8615 puts the issuer path after the well-known segment, so a holder whose issuer identifier carries a path requests `/.well-known/jwt-vc-issuer/oid4vci/<id>`, not just the bare form.
     app.get(['/.well-known/jwt-vc-issuer', '/.well-known/jwt-vc-issuer/*'], (_request, response, next) => {
       try {
         if (!getIssuerService) throw new Error('OpenID4VC issuer service is not initialized')
@@ -144,8 +140,7 @@ function assertValidWalletAttestationCertificates(certificates: string[]): void 
   })
 }
 
-/** OpenID4VCI 1.0 dropped `format` from the credential request, so draft wallets send
- *  `{ format, vct }` and Credo answers `unsupported_credential_format`. */
+// Draft wallets predating OpenID4VCI 1.0 still send `format` alongside `vct` on the credential request, which Credo answers with `unsupported_credential_format`.
 export function acceptDraftCredentialRequests(configurations: OpenId4VcCredentialConfiguration[]) {
   return (request: Request, _response: Response, next: NextFunction): void => {
     const body: unknown = request.body
@@ -168,26 +163,7 @@ export function acceptDraftCredentialRequests(configurations: OpenId4VcCredentia
   }
 }
 
-/**
- * openid4vci-kt - the OID4VCI library inside the EUDI reference wallet - reads issuer metadata
- * more strictly than the spec requires, in two ways that no other client shares:
- *
- *   - it asks with `Accept: application/jwt; application/json`, a semicolon where a comma belongs,
- *     which parses as `application/jwt` alone and draws the signed metadata JWT it then cannot
- *     verify, since Credo signs that with a DID kid and no x5c chain;
- *   - it refuses any proof type that omits `key_attestations_required`, treating the OID4VCI 1.0
- *     optional member as mandatory.
- *
- * The payload accommodation is scoped to that client, recognised by the malformed accept header it
- * sends. Advertising it to everyone is not an option: a Credo holder that sees
- * `key_attestations_required` stops binding a plain JWK and demands a key attestation, and swiyu
- * models `proof_types_supported` as a closed enum, so an `attestation` member makes it throw while
- * parsing the metadata and the offer dies before the wallet renders anything.
- *
- * The accept rewrite is wider: any client that offers both types can read JSON, and swiyu must be
- * served JSON because its resolver rejects our did:webvh SCID and so can never verify the signed
- * JWT. A client asking for `application/jwt` alone still receives it.
- */
+// openid4vci-kt (the EUDI reference wallet) sends `Accept: application/jwt; application/json` and requires `key_attestations_required` on every proof type, both outside what the spec mandates.
 export function accommodateOpenId4VciKt(hasKeyAttestationAnchor: boolean) {
   return (request: Request, response: Response, next: NextFunction): void => {
     const accept = request.headers.accept
@@ -224,8 +200,7 @@ export function accommodateOpenId4VciKt(hasKeyAttestationAnchor: boolean) {
   }
 }
 
-/** Credo derives this header from the signer alone, so a DID signer yields `kid` and no `x5c`, which
- *  NL Wallet's core rejects while parsing. IssuerService re-signs the payload under both members. */
+// NL Wallet's core rejects a metadata JWT signed with `kid` and no `x5c`, so this serves the copy IssuerService re-signs under both.
 export function serveCertificateBoundIssuerMetadata(getIssuerService?: () => OpenId4VcIssuerRequestMapper) {
   return (request: Request, response: Response, next: NextFunction): void => {
     if (
@@ -289,8 +264,7 @@ function withKeyAttestationRequirement(body: string, hasKeyAttestationAnchor: bo
   }
 }
 
-/** Credo omits `dpop_signing_alg_values_supported`. wwWallet reads the absent member and then
- *  dereferences its DPoP params unconditionally, throwing before any consent screen renders. */
+// wwWallet dereferences `dpop_signing_alg_values_supported` unconditionally and throws before rendering consent when Credo omits it.
 function advertiseDpopSupport(request: Request, response: Response, next: NextFunction): void {
   if (request.method !== 'GET' || !isAuthorizationServerMetadataPath(request.path)) {
     next()

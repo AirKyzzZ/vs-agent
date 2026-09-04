@@ -25,6 +25,7 @@ export type PresentationDecision = {
   credential?: OpenId4VcVerifiedCredentialResult
 }
 
+/** Trust decision of [VSA-ADM-OID-PR]. */
 export async function decidePresentation(input: {
   agent: DidResolverAgent
   options: Pick<OpenId4VcPluginOptions, 'credentialConfigurations' | 'verifierPolicies'>

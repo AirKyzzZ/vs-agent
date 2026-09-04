@@ -99,9 +99,6 @@ export class VerifierService {
   }
 
   public ensureInitialized(): Promise<void> {
-    // A rejected initialization must not be cached: a transient boot-time
-    // failure (KMS or storage not ready yet) would otherwise wedge the
-    // process until restart. Reset so the next call retries.
     this.initialization ??= this.initialize().catch(error => {
       this.initialization = undefined
       throw error
@@ -144,8 +141,6 @@ export class VerifierService {
     }
   }
 
-  /** Public signing-certificate material, for operators wiring verifier
-   *  fingerprint pins (never includes private keys). */
   public getCertificateInfo(): SigningCertificateInfo {
     return signingCertificateInfo('verifier', this.signingCertificateHandle())
   }
@@ -373,12 +368,7 @@ export class VerifierService {
 
     const did = this.agent.did ?? null
 
-    // Presentation Exchange is the rail for wallets predating DCQL, and those wallets tend to
-    // verify the request with an EdDSA-only implementation that resolves did:web but not
-    // did:webvh. Sign that rail with the Ed25519 authentication key, named by the parallel
-    // did:web the agent already publishes, so such a wallet can fetch the key and check the
-    // signature. DCQL keeps the certificate-bound key and the did:webvh identifier, so the
-    // wallets already verified against it are untouched.
+    // Presentation Exchange requests sign with the Ed25519 parallel did:web key: MOSIP verifies EdDSA over did:web only, never did:webvh.
     if (queryLanguage === 'presentation_exchange') {
       if (this.parallelWebSigningDidUrl) {
         return { method: 'did' as const, didUrl: this.parallelWebSigningDidUrl }

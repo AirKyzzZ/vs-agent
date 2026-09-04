@@ -33,12 +33,11 @@ interface DevelopmentCertificateRecord {
 export interface SigningCertificateInfo {
   role: SigningRole
   development: boolean
-  /** SHA256:<hex> of the leaf, the pin format of trust.developmentCertificateFingerprints. */
   fingerprint: string
-  /** Base64 DER, leaf first. */
   certificateChain: string[]
 }
 
+/** [VSA-ADM-OID-CS] Public signing material of one capability. */
 export function signingCertificateInfo(
   role: SigningRole,
   handle: SigningCertificateHandle,
@@ -87,11 +86,6 @@ export function didFromValidatedCertificate(certificate: X509Certificate): strin
   return did
 }
 
-/**
- * `extraPurposes` exists because Credo signs credential issuer metadata through the DID's
- * `authentication` relationship, while an issuer key otherwise only needs `assertionMethod`.
- * An issuer configured to sign its metadata with its DID has to publish under both.
- */
 export async function publishDevelopmentSigningKey(
   agent: DevelopmentDidAgent,
   signingCertificate: SigningCertificateHandle,
@@ -136,14 +130,13 @@ export async function publishDevelopmentSigningKey(
   }
 
   const didDocument = DidDocument.fromJSON(resolution.didDocument.toJSON())
+  // A resolver that doesn't recognise JsonWebKey2020 rejects the method without this context, so it is published alongside the type.
   didDocument.context = [...new Set([...contextValues(didDocument.context), JSON_WEB_KEY_2020_CONTEXT])]
   didDocument.verificationMethod = [
     ...(didDocument.verificationMethod ?? []).filter(method => method.id !== methodId),
     new VerificationMethod({
       id: methodId,
       type: 'JsonWebKey2020',
-      // The kid ties the published method back to the KMS key. Without it Credo derives a
-      // legacy key id from the JWK when signing through the DID, which no backend holds.
       publicKeyJwk: { ...publicJwk, kid: signingCertificate.keyId },
       controller: did,
     }),
@@ -171,14 +164,7 @@ export async function publishDevelopmentSigningKey(
   }
 }
 
-/**
- * Credo signs "through the DID" by mapping the verification method to a KMS key via the created
- * DidRecord's `keys` entries (`didDocumentRelativeKeyId` → `kmsKeyId`) — the `kid` published in the
- * DID document is never consulted, and the fallback is a legacy base58 key id no Askar backend
- * holds. Registrars do not maintain that mapping on `dids.update` (did:webvh drops `options.keys`
- * entirely), so record it on the DidRecord directly — also when the method itself is already
- * published, which repairs documents written by earlier builds.
- */
+// Credo reads the KMS key-id mapping on the DidRecord, never the published `kid`, and registrars like did:webvh don't maintain it on update, so it is written here directly (PR #540).
 export async function ensureCreatedDidRecordKeyMapping(
   agent: Pick<DevelopmentDidAgent, 'dependencyManager'>,
   did: string,
@@ -216,7 +202,6 @@ async function loadConfiguredSigningCertificate(
   assertCertificateChainUsable(chain)
   const configuredChainEndpoint = configured.certificateChain[configured.certificateChain.length - 1]
 
-  // This trust endpoint is operator-configured signing material, never a peer-provided chain.
   const validatedRootToLeafChain = await agent.x509.validateCertificateChain({
     certificateChain: configured.certificateChain,
     trustedCertificates: [configuredChainEndpoint],
@@ -303,15 +288,9 @@ async function loadDevelopmentSigningCertificate(
       certificate.keyId = stored.keyId
       return { certificate, chain: [certificate], keyId: stored.keyId, development: true }
     } catch (error) {
-      // A KMS backend fault is not stale state: recreating on it would rotate a
-      // healthy certificate and break fingerprints pinned by verifiers.
       if (error instanceof Kms.KeyManagementError && !(error instanceof Kms.KeyManagementKeyNotFoundError)) {
         throw error
       }
-      // Development certificates are disposable. An expired certificate, an
-      // identity that no longer matches the DID or host, or a key id no KMS
-      // backend holds (records written by older builds) must not wedge the
-      // agent: drop the record and mint a fresh certificate below.
       await agent.genericRecords.deleteById(recordId)
     }
   }

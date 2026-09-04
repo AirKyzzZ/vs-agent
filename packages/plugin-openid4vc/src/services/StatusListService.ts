@@ -10,8 +10,6 @@ const BITS_PER_STATUS = 1
 const STATUS_REVOKED = 1
 const SIGNING_ALG = 'ES256' as const
 
-/** SD-JWT VC `status` claim referencing one entry of a Token Status List (draft-ietf-oauth-status-list). */
-/** Everything the status list needs from the agent: persistence plus the Credo status list API. */
 export type StatusListAgent = Pick<BaseAgent, 'genericRecords' | 'dependencyManager'>
 
 export interface StatusReference {
@@ -23,24 +21,13 @@ interface StatusListState {
   uri: string
   size: number
   nextIndex: number
-  /** the signed `statuslist+jwt` token; it is the durable state, re-signed on every revoke */
   token: string
-  /** issuance session id -> allocated indices (one credential may carry several holder keys) */
   sessionIndices: Record<string, number[]>
   revoked: number[]
 }
 
 export class StatusListEntryNotFoundError extends Error {}
 
-/**
- * Owns one Token Status List for the issuer: allocates an index per issued credential, serves the
- * signed status list token, and flips a bit on revocation. The signed JWT is the source of truth
- * (Credo's `updateTokenStatusList` re-signs it); we persist it plus the allocation bookkeeping in a
- * single Credo `GenericRecord`.
- *
- * Index allocation is serialized in-process, so a horizontally scaled issuer (multiple instances
- * sharing storage) would need a distributed allocator — out of scope; documented as a limitation.
- */
 export class StatusListService {
   private state?: StatusListState
   private queue: Promise<unknown> = Promise.resolve()
@@ -76,7 +63,6 @@ export class StatusListService {
     await this.persist()
   }
 
-  /** Reserve the next index for a credential of `issuanceSessionId` and return its status reference. */
   public allocate(issuanceSessionId: string): Promise<StatusReference> {
     return this.withLock(async () => {
       const state = this.requireState()
@@ -89,7 +75,6 @@ export class StatusListService {
     })
   }
 
-  /** Flip every index issued for `issuanceSessionId` to revoked and re-sign the token. Idempotent. */
   public revoke(issuanceSessionId: string): Promise<number[]> {
     return this.withLock(async () => {
       const state = this.requireState()
@@ -101,9 +86,7 @@ export class StatusListService {
       }
       const toRevoke = indices.filter(index => !state.revoked.includes(index))
       if (toRevoke.length > 0) {
-        // Re-sign via createTokenStatusList rather than updateTokenStatusList: the update path in
-        // this Credo build reads `alg` off the KMS key (unset on our P-256 cert key) instead of the
-        // provided option, so it fails to sign. Decoding + re-creating keeps the x5c header intact.
+        // Re-signs through createTokenStatusList rather than updateTokenStatusList: Credo's update path reads `alg` off the KMS key, unset on our P-256 cert key, and fails to sign.
         const list = getListFromStatusListJWT(state.token)
         for (const index of toRevoke) list.setStatus(index, STATUS_REVOKED)
         const { statusList: token } = await this.api().createTokenStatusList<'jwt'>({
@@ -121,13 +104,11 @@ export class StatusListService {
     })
   }
 
-  /** The signed status list token to serve, or undefined if `listId` is not this list. */
   public getToken(listId: string): string | undefined {
     if (!this.state || this.state.listId !== listId) return undefined
     return this.state.token
   }
 
-  /** Serialize read-modify-write of the status list so concurrent allocations can't reuse an index. */
   private withLock<T>(fn: () => Promise<T>): Promise<T> {
     const result = this.queue.then(
       () => fn(),

@@ -8,13 +8,8 @@ import type { OpenId4VpVerifiedAuthorizationResponse } from '@credo-ts/openid4vc
 import { findCredentialConfiguration } from '../config'
 import { isRecord } from '../utils/isRecord'
 
-// What the issuer signs with (IssuerService credential_signing_alg_values_supported).
 const PRESENTATION_ALGORITHMS = ['ES256'] as const
 
-/**
- * Which query language the authorization request carries. DCQL is the OpenID4VP v1 default;
- * `presentation_exchange` exists for wallets that never implemented DCQL and reject a v1 request.
- */
 export type OpenId4VcQueryLanguage = 'dcql' | 'presentation_exchange'
 
 type PolicyOptions = Pick<OpenId4VcPluginOptions, 'credentialConfigurations' | 'verifierPolicies'>
@@ -28,6 +23,7 @@ export function presentationQueryFor(
 ) {
   if (queryLanguage === 'presentation_exchange') {
     return {
+      // OpenID4VP v1 forbids Presentation Exchange, so this rail is minted on the last draft that still admits it.
       version: 'v1.draft21' as const,
       presentationExchange: { definition: presentationDefinitionFor(configuration, policy) },
     }
@@ -87,7 +83,6 @@ function matchDcqlPolicy(
   return policy
 }
 
-/** Same acceptance rules as the DCQL path, read off the definition we minted. */
 function matchPresentationExchangePolicy(
   options: PolicyOptions,
   definition: unknown,
@@ -140,6 +135,7 @@ export function presentationDefinitionFor(
   return {
     id: `${configuration.id}-presentation-exchange`,
     format: {
+      // vc+sd-jwt: Presentation Exchange has no dc+sd-jwt format key.
       'vc+sd-jwt': {
         'sd-jwt_alg_values': [...PRESENTATION_ALGORITHMS],
         'kb-jwt_alg_values': [...PRESENTATION_ALGORITHMS],
@@ -154,7 +150,7 @@ export function presentationDefinitionFor(
           fields: [
             {
               path: ['$.vct'],
-              // pattern beside const: MOSIP needs filter.pattern; vc+sd-jwt since PEX lacks a dc+sd-jwt key.
+              // pattern beside const: MOSIP requires filter.pattern, not const alone.
               filter: {
                 type: 'string' as const,
                 const: configuration.vct,

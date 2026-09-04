@@ -96,9 +96,7 @@ export class IssuerService {
   ) {}
 
   public ensureInitialized(): Promise<void> {
-    // A rejected initialization must not be cached: a transient boot-time
-    // failure (KMS or storage not ready yet) would otherwise wedge the
-    // process until restart. Reset so the next call retries.
+    // A rejected initialization is not cached, so a transient boot-time failure retries instead of wedging the process until restart.
     this.initialization ??= this.initialize().catch(error => {
       this.initialization = undefined
       throw error
@@ -170,16 +168,11 @@ export class IssuerService {
     return session
   }
 
-  /** Public signing-certificate material, for operators wiring verifier
-   *  fingerprint pins (never includes private keys). */
   public getCertificateInfo(): SigningCertificateInfo {
     this.assertInitialized()
     return signingCertificateInfo('issuer', this.signingCertificateHandle())
   }
 
-  /** SD-JWT VC issuer metadata. Credentials are signed with `x5c`, so a holder that
-   *  anchors the issuer on its origin rather than on the DID needs the signing key
-   *  published here to accept them at all. */
   public getJwtVcIssuerMetadata(): Record<string, unknown> {
     this.assertInitialized()
     return {
@@ -188,17 +181,10 @@ export class IssuerService {
     }
   }
 
-  /** Signed issuer metadata re-signed to carry the certificate chain beside Credo's `kid`: NL Wallet
-   *  requires `x5c` in that header, swiyu requires `kid`, and RFC 7515 makes both independent. */
   public getSignedMetadataJwt(): string | undefined {
     return this.signedMetadataJwt
   }
 
-  /** SD-JWT VC type metadata, extended with the Verifiable Trust link: the
-   *  ecosystem's VTJSC (relatedJsonSchemaCredentialId) is THE schema anchor -
-   *  wallets verify the VTJSC signature and resolve the schema through their
-   *  own VPR access from its $ref + digestSRI. The spec's additional-property
-   *  extensibility keeps plain SD-JWT VC consumers unaffected. */
   public getVctMetadata(configurationId: string): VtSdJwtVcTypeMetadata | undefined {
     const configuration = findCredentialConfiguration(this.options, configurationId)
     if (!configuration) return undefined
@@ -210,8 +196,7 @@ export class IssuerService {
       ...(configuration.description ? { description: configuration.description } : {}),
       display: [
         {
-          // sd-jwt-vc deprecated `lang` in favour of `locale` and accepts either; swiyu predates
-          // the rename and rejects the whole document when `lang` is absent.
+          // swiyu predates the sd-jwt-vc rename of `lang` to `locale` and rejects the document when `lang` is absent.
           lang: 'en',
           locale: 'en',
           name: configuration.name,
@@ -313,12 +298,10 @@ export class IssuerService {
     this.initialized = true
   }
 
-  /** The signed status list token for `listId`, served at `<publicApiBaseUrl>/oid4vc/status-list/:id`. */
   public getStatusListToken(listId: string): string | undefined {
     return this.statusListService?.getToken(listId)
   }
 
-  /** Revoke every credential issued for `issuanceSessionId`. Idempotent. */
   public async revokeIssuanceSession(id: string): Promise<void> {
     await this.ensureInitialized()
     if (!this.statusListService) throw new OpenId4VcRevocationDisabledError('revocation is not enabled')
@@ -404,14 +387,11 @@ export class IssuerService {
         {
           format: 'dc+sd-jwt' as const,
           vct: configuration.vct,
-          // OID4VCI makes `scope` optional; wwWallet's metadata schema requires it and fails
-          // resolution outright without one.
+          // `scope` is optional per OID4VCI, but wwWallet's metadata schema requires it and fails resolution without one.
           scope: configuration.id,
           cryptographic_binding_methods_supported: ['jwk'],
           credential_signing_alg_values_supported: ['ES256'],
-          // Only `jwt` goes on the record. `attestation` is added per-request for the one client
-          // that needs it: swiyu's ProofType is a closed enum and any other member makes it throw
-          // while parsing the metadata, killing the offer before the wallet ever sees it.
+          // Only `jwt` is advertised here: swiyu models `proof_types_supported` as a closed `ProofType` enum and throws on any other member.
           proof_types_supported: {
             jwt: { proof_signing_alg_values_supported: ['ES256'] },
           },
@@ -467,8 +447,7 @@ function summarizeIssuanceSession(session: OpenId4VcIssuanceSessionRecord): Open
   }
 }
 
-/** HAIP forbids the trust anchor inside `x5c`, and NL Wallet enforces it, so a configured chain
- *  drops its self-signed root. A development chain is the self-signed leaf itself and stays whole. */
+// HAIP forbids the trust anchor inside `x5c`, and NL Wallet enforces it, so a configured chain drops its self-signed root.
 function metadataCertificateChain(signingCertificate: SigningCertificateHandle): X509Certificate[] {
   if (signingCertificate.development) return signingCertificate.chain
 

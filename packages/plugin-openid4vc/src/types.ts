@@ -35,30 +35,13 @@ export interface OpenId4VcPluginOptions {
     signing: OpenId4VcSigningOptions
     requireWalletAttestation?: boolean
     walletAttestationCertificates?: string[]
-    /**
-     * How the issuer signs its credential issuer metadata. `x5c` (the default) signs with the
-     * certificate chain; `did` signs with the issuer's DID, which is what lets a wallet
-     * trust-resolve it against a registry. Credo only accepts this at issuer creation, so an
-     * issuer record created under a different value keeps it until the record is recreated.
-     */
     metadataSigner?: 'x5c' | 'did'
-    /**
-     * Trust anchors for OpenID4VCI key attestations. A wallet that can only prove possession
-     * through an attested key - the EUDI reference wallet is one - sends a `key-attestation+jwt`
-     * signed by its wallet provider, and this is what that attestation must chain to. Absent, the
-     * `attestation` proof type is neither advertised nor accepted.
-     */
     keyAttestationCertificates?: string[]
   }
   verifier?: {
     id: string
     displayName: string
     signing: OpenId4VcSigningOptions
-    /**
-     * How the verifier identifies itself in the authorization request. `x5c` (the default) yields an
-     * `x509_hash:` client_id; `did` yields the verifier's DID, which is what lets a wallet
-     * trust-resolve it against a registry instead of against a certificate.
-     */
     requestSigner?: 'x5c' | 'did'
   }
   trust?: {
@@ -70,7 +53,6 @@ export interface OpenId4VcPluginOptions {
   }
   revocation?: {
     enabled: boolean
-    /** Status list capacity in entries; defaults to 131072. */
     size?: number
   }
   credentialConfigurations: OpenId4VcCredentialConfiguration[]

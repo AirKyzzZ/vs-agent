@@ -75,11 +75,6 @@ export async function verifyKeyBoundToDid(
   return 'unbound'
 }
 
-/**
- * The DID URL of the verification method whose key is the signing certificate key, or null when the
- * DID does not publish it. Needed to sign an authorization request with `method: 'did'`, which is
- * what lets a wallet trust-resolve the verifier by DID rather than by certificate.
- */
 export async function findBoundVerificationMethodId(
   agent: DidResolverAgent,
   did: string | null,
@@ -132,13 +127,7 @@ export async function findBoundVerificationMethodId(
   return null
 }
 
-/**
- * The id of an Ed25519 verification method the DID publishes for one of `purposes`.
- *
- * Some wallets accept only EdDSA-signed authorization requests: MOSIP Inji's OpenID4VP library
- * declares a `RequestSigningAlgorithm` enum whose single constant is EdDSA, and rejects anything
- * else with `No enum constant ... RequestSigningAlgorithm.ES256` before reading the request.
- */
+// MOSIP Inji's OpenID4VP library declares a RequestSigningAlgorithm enum whose only constant is EdDSA and rejects anything else before reading the request.
 export async function findEd25519VerificationMethodId(
   agent: DidResolverAgent,
   did: string | null,
