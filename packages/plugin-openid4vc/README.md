@@ -48,7 +48,7 @@ camelCase. Full reference: [[VSA-VTI-CFG-ENV-OID]](https://github.com/verana-lab
 | `verifier.requestSigner` | `x5c` (default) or `did`. `did` names the agent DID as `client_id`. A caller can override it per request. |
 | `trust` | Required with `verifier`: `resolverUrl` (`https://` Verana resolver), `timeoutMs` (1 to 30000), `allowedDidWebHosts`, `credentialIssuerCertificates` (self-issued CA roots with `keyCertSign`), optional `developmentCertificateFingerprints`. |
 | `revocation` | Optional: `enabled`, and `size` (status list capacity, default 131072). |
-| `credentialConfigurations` | Array. Each entry: unique `id`, `format` `dc+sd-jwt`, `https://` `vct` and `vtjscId`, `name`, optional `description`, `claims`, `disclosureFrame` (subset of `claims`), `ttlSeconds` (60 to 31536000). |
+| `credentialConfigurations` | Array. Each entry: unique `id`, `format` `dc+sd-jwt`, `https://` `vct` and `vtjscId`, `name`, optional `description`, `claims`, `disclosureFrame` (subset of `claims`), `ttlSeconds` (60 to 31536000). `claims` is the allowed set for an offer: an offer may omit any of them and the credential then omits them too, an offered claim must be non-empty, and an offer must carry at least one configured claim. |
 | `verifierPolicies` | Array. Each entry: unique `id`, `credentialConfigurationId`, `requestedClaims` (subset of that configuration's claims). |
 
 A claim may not be named `vct`, `iat`, `exp`, `iss`, `cnf` or `status`: those belong to the
