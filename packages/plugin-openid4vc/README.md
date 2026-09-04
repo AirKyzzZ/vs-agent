@@ -128,7 +128,7 @@ of an absent capability answers `409 CAPABILITY_NOT_CONFIGURED`.
 | `createCredentialOffer` | `POST /credential-offer` | `credentialConfigurationId`, `claims`. Returns `credentialExchangeId` and `url`. `400 UNKNOWN_CONFIGURATION`, `400 INVALID_INPUT`. |
 | `listCredentialExchanges` | `GET /credential-exchanges` | Filters `credentialConfigurationId`, `state`. Keyset pagination. |
 | `getCredentialExchange` | `GET /credential-exchanges/{credentialExchangeId}` | `credentialExchangeId`, `credentialConfigurationId`, `state`, `createdAt`, `updatedAt`, `expiresAt`, `errorMessage`. Never the claims, the offer URL or the pre-authorized code. |
-| `deleteCredentialExchange` | `DELETE /credential-exchanges/{credentialExchangeId}` | `204`. Revokes nothing. |
+| `deleteCredentialExchange` | `DELETE /credential-exchanges/{credentialExchangeId}` | `204`. Revokes nothing, and is refused with `409 INVALID_STATE` while the credential is on the status list and not revoked. |
 | `revokeCredential` | `POST /credential-exchanges/{credentialExchangeId}/revoke` | `204`. `409 INVALID_STATE` before issuance, `409 CAPABILITY_NOT_CONFIGURED` when revocation is off. |
 | `createPresentationRequest` | `POST /presentation-request` | `policyId`, optional `queryLanguage` (`dcql`, `presentation_exchange`), optional `requestSigner` (`x5c`, `did`). Returns `proofExchangeId` and `url`. `400 UNKNOWN_POLICY`. |
 | `listPresentations` | `GET /presentations` | Filters `policyId`, `state`. Keyset pagination. |

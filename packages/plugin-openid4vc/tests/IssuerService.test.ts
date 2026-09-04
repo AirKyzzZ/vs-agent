@@ -159,11 +159,26 @@ function signingHandle() {
   }
 }
 
+function statusListState(sessionIndices: Record<string, number[]>, revoked: number[]) {
+  return {
+    content: {
+      listId: 'list-1',
+      uri: 'https://agent.example/oid4vc/status-list/list-1',
+      size: 10,
+      nextIndex: Object.values(sessionIndices).flat().length,
+      token: 'eyJ.status.list',
+      sessionIndices,
+      revoked,
+    },
+  }
+}
+
 async function initialized(
   overrides: {
     revocation?: OpenId4VcPluginOptions['revocation']
     issuer?: Partial<NonNullable<OpenId4VcPluginOptions['issuer']>>
     issuerMissing?: boolean
+    statusList?: { sessionIndices: Record<string, number[]>; revoked: number[] }
   } = {},
 ) {
   const api = issuerApi()
@@ -177,7 +192,14 @@ async function initialized(
   if (overrides.revocation) configured.revocation = overrides.revocation
   if (overrides.issuer && configured.issuer) Object.assign(configured.issuer, overrides.issuer)
 
-  const service = new IssuerService(agent(api) as never, configured)
+  const issuerAgent = agent(api)
+  if (overrides.statusList) {
+    issuerAgent.genericRecords.findById.mockResolvedValue(
+      statusListState(overrides.statusList.sessionIndices, overrides.statusList.revoked),
+    )
+  }
+
+  const service = new IssuerService(issuerAgent as never, configured)
   await service.ensureInitialized()
   return { service, api }
 }
@@ -792,6 +814,46 @@ describe('IssuerService', () => {
       await expect(service.revokeIssuanceSession('session-1')).rejects.toBeInstanceOf(
         OpenId4VcIssuanceSessionStateError,
       )
+    })
+
+    it('refuses to delete a session whose credential is not revoked', async () => {
+      const { service, api } = await initialized({
+        revocation: { enabled: true },
+        statusList: { sessionIndices: { 'session-1': [0] }, revoked: [] },
+      })
+      api.getIssuanceSessionById.mockResolvedValue(issuanceSession({ state: 'Completed' }))
+
+      await expect(service.deleteIssuanceSession('session-1')).rejects.toThrow(
+        "issuance session 'session-1' holds an unrevoked credential; revoke it first",
+      )
+      await expect(service.deleteIssuanceSession('session-1')).rejects.toBeInstanceOf(
+        OpenId4VcIssuanceSessionStateError,
+      )
+      expect(api.deleteIssuanceSessionById).not.toHaveBeenCalled()
+    })
+
+    it('deletes a session once every allocated index is revoked', async () => {
+      const { service, api } = await initialized({
+        revocation: { enabled: true },
+        statusList: { sessionIndices: { 'session-1': [0] }, revoked: [0] },
+      })
+      api.getIssuanceSessionById.mockResolvedValue(issuanceSession({ state: 'Completed' }))
+
+      await service.deleteIssuanceSession('session-1')
+
+      expect(api.deleteIssuanceSessionById).toHaveBeenCalledWith('session-1')
+    })
+
+    it('deletes a session that never reached the status list', async () => {
+      const { service, api } = await initialized({
+        revocation: { enabled: true },
+        statusList: { sessionIndices: { 'session-2': [0] }, revoked: [] },
+      })
+      api.getIssuanceSessionById.mockResolvedValue(issuanceSession())
+
+      await service.deleteIssuanceSession('session-1')
+
+      expect(api.deleteIssuanceSessionById).toHaveBeenCalledWith('session-1')
     })
   })
 

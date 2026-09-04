@@ -149,6 +149,11 @@ export class IssuerService {
   public async deleteIssuanceSession(id: string): Promise<void> {
     await this.ensureInitialized()
     await this.findOwnedSession(id)
+    if (this.statusListService?.hasUnrevokedEntries(id)) {
+      throw new OpenId4VcIssuanceSessionStateError(
+        `issuance session '${id}' holds an unrevoked credential; revoke it first`,
+      )
+    }
     await this.issuerApi().deleteIssuanceSessionById(id)
   }
 

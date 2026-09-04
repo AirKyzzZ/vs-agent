@@ -100,6 +100,17 @@ describe('status list revocation', () => {
     )
   }, 60_000)
 
+  it('refuses to delete an issued session before revocation and allows it after', async () => {
+    const { sessionId } = await issue()
+
+    await expect(agents.issuer.service.deleteIssuanceSession(sessionId)).rejects.toBeInstanceOf(
+      OpenId4VcIssuanceSessionStateError,
+    )
+
+    await agents.issuer.service.revokeIssuanceSession(sessionId)
+    await expect(agents.issuer.service.deleteIssuanceSession(sessionId)).resolves.toBeUndefined()
+  }, 60_000)
+
   it('answers 404 for an unknown list', async () => {
     const response = await fetch(`${agents.issuer.publicApiBaseUrl}/oid4vc/status-list/unknown`)
     expect(response.status).toBe(404)

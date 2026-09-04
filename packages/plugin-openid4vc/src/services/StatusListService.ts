@@ -104,6 +104,12 @@ export class StatusListService {
     })
   }
 
+  public hasUnrevokedEntries(issuanceSessionId: string): boolean {
+    const state = this.state
+    if (!state) return false
+    return (state.sessionIndices[issuanceSessionId] ?? []).some(index => !state.revoked.includes(index))
+  }
+
   public getToken(listId: string): string | undefined {
     if (!this.state || this.state.listId !== listId) return undefined
     return this.state.token

@@ -141,12 +141,16 @@ export class V2Openid4vcCredentialExchangesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete a credential exchange',
-    description: 'Deletes an issuance session record. It revokes nothing.',
+    description:
+      'Deletes an issuance session record. It revokes nothing, and it is refused while the credential it issued sits unrevoked on the status list.',
   })
   @ApiParam(CREDENTIAL_EXCHANGE_ID)
   @ApiNoContentResponse({ description: 'The credential exchange record is deleted' })
   @ApiNotFoundResponse({ description: 'No credential exchange with the given id' })
-  @ApiConflictResponse({ description: 'The configuration defines no issuer capability' })
+  @ApiConflictResponse({
+    description:
+      'The configuration defines no issuer capability, or the exchange holds a credential that is on the status list and not revoked (INVALID_STATE)',
+  })
   public async deleteCredentialExchange(
     @Param('credentialExchangeId') credentialExchangeId: string,
   ): Promise<void> {
