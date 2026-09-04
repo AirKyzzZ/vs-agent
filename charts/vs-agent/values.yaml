@@ -94,6 +94,13 @@ ingress:
 # Extra environment variables (extensible)
 extraEnv: []
 
+# OpenID4VC. When config is non-empty it is rendered into a ConfigMap, mounted
+# read-only, and OID4VC_CONFIG_FILE points at it, which enables the OpenID4VC
+# scope. The JSON must not contain publicApiBaseUrl: the agent injects it from
+# PUBLIC_API_BASE_URL.
+oid4vc:
+  config: "" # openid4vc.json content as a string
+
 # Persistent volume configuration for app
 storage:
   size: 1Gi

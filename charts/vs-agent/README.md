@@ -52,6 +52,7 @@ This Helm chart deploys **VS Agent** application with a StatefulSet, supporting 
 | `trustedEcsEcosystemDids`  | Comma-separated ECS ecosystem DIDs. Required when `agentMode` is `standalone` | `""` |
 | `delegatedParentVsDid`     | DID of the parent Verifiable Service. Required when `agentMode` is `delegated` | `""` |
 | `extraEnv`                 | Additional environment variables for the agent   | `[]`                            |
+| `oid4vc.config`            | OpenID4VC configuration JSON, as a string. When set, the chart mounts it read-only and sets `OID4VC_CONFIG_FILE`, which enables the `/v2/openid4vc` scope and the public OpenID4VC endpoints | `""` |
 
 ### Secrets Management
 
