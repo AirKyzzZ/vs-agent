@@ -5,7 +5,7 @@ import { getPublicJwkFromVerificationMethod, Kms, tryParseDid } from '@credo-ts/
 import { BlockList, isIP } from 'node:net'
 
 type BindingPurpose = Extract<DidPurpose, 'assertionMethod' | 'authentication'>
-type DidResolverAgent = Pick<BaseAgent, 'dids'>
+export type DidResolverAgent = Pick<BaseAgent, 'dids'>
 
 export const DEFAULT_DID_RESOLUTION_TIMEOUT_MS = 5_000
 export const MAX_DID_RESOLUTION_TIMEOUT_MS = 30_000
