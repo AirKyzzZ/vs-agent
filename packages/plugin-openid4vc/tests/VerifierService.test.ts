@@ -697,6 +697,57 @@ describe('VerifierService', () => {
       expect(sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
     })
 
+    it('lists a verified session that nobody read yet as verified but not accepted, without deciding', async () => {
+      const { service, api } = await initialized()
+      api.findVerificationSessionsByQuery.mockResolvedValue([
+        verificationSession({ state: 'ResponseVerified' }),
+      ])
+
+      const sessions = await service.listVerificationSessions()
+
+      expect(sessions).toEqual([
+        {
+          id: 'session-1',
+          policyId: 'employee-name',
+          state: 'ResponseVerified',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          cryptographicVerified: true,
+          accepted: false,
+        },
+      ])
+      expect(api.getVerifiedAuthorizationResponse).not.toHaveBeenCalled()
+      expect(verdictFor).not.toHaveBeenCalled()
+      expect(sessionRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('lists a verified session from its stored decision', async () => {
+      const { service, api } = await initialized()
+      const session = verificationSession({ state: 'ResponseVerified' })
+      const stored = {
+        cryptographicVerified: true,
+        accepted: true,
+        trust: {
+          verdict: 'TRUSTED_AUTHORIZED',
+          evidence: {
+            did: ISSUER_DID,
+            trustStatus: 'TRUSTED',
+            vtjscId: VTJSC_ID,
+            authorized: true,
+            queries: [],
+          },
+        },
+        credential: { vct: VCT, disclosedClaims: { name: 'Ada' } },
+      }
+      session.metadata.set('openid4vc/verificationOutcome', stored)
+      api.findVerificationSessionsByQuery.mockResolvedValue([session])
+
+      const sessions = await service.listVerificationSessions()
+
+      expect(sessions[0]).toMatchObject(stored)
+      expect(api.getVerifiedAuthorizationResponse).not.toHaveBeenCalled()
+    })
+
     it('deletes a session of this verifier and refuses a foreign one', async () => {
       const { service, api } = await initialized()
       api.getVerificationSessionById.mockResolvedValueOnce(verificationSession())

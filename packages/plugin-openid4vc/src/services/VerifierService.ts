@@ -160,7 +160,7 @@ export class VerifierService {
     const sessions = await this.verifierApi().findVerificationSessionsByQuery({
       verifierId: this.verifierOptions().id,
     })
-    return Promise.all(sessions.map(session => this.summarize(session)))
+    return sessions.map(session => this.summarizeKnown(session))
   }
 
   public async deleteVerificationSession(id: string): Promise<void> {
@@ -178,8 +178,19 @@ export class VerifierService {
   private async summarize(
     session: OpenId4VcVerificationSessionRecord,
   ): Promise<OpenId4VcVerificationSessionSummary> {
+    return this.toSummary(session, await this.decisionFor(session))
+  }
+
+  private summarizeKnown(session: OpenId4VcVerificationSessionRecord): OpenId4VcVerificationSessionSummary {
+    const decision = this.storedDecision(session) ?? { cryptographicVerified: true, accepted: false }
+    return this.toSummary(session, decision)
+  }
+
+  private toSummary(
+    session: OpenId4VcVerificationSessionRecord,
+    decision: PresentationDecision,
+  ): OpenId4VcVerificationSessionSummary {
     const policyId = session.getTag(POLICY_TAG)
-    const decision = await this.decisionFor(session)
     return {
       id: session.id,
       ...(typeof policyId === 'string' ? { policyId } : {}),
@@ -191,12 +202,15 @@ export class VerifierService {
     }
   }
 
-  private async decisionFor(session: OpenId4VcVerificationSessionRecord): Promise<PresentationDecision> {
+  private storedDecision(session: OpenId4VcVerificationSessionRecord): PresentationDecision | undefined {
     if (session.state !== OpenId4VcVerificationSessionState.ResponseVerified) {
       return { cryptographicVerified: false, accepted: false }
     }
+    return session.metadata.get<PresentationDecision>(OUTCOME_METADATA_KEY) ?? undefined
+  }
 
-    const stored = session.metadata.get<PresentationDecision>(OUTCOME_METADATA_KEY)
+  private async decisionFor(session: OpenId4VcVerificationSessionRecord): Promise<PresentationDecision> {
+    const stored = this.storedDecision(session)
     if (stored) return stored
 
     const verified = await this.getVerifiedResponse(session.id)
