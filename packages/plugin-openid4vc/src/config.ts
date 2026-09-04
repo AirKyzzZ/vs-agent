@@ -39,6 +39,10 @@ export function validateOpenId4VcOptions(options: OpenId4VcPluginOptions): void 
     if (options.issuer.keyAttestationCertificates !== undefined) {
       assertStringArray(options.issuer.keyAttestationCertificates, 'issuer.keyAttestationCertificates')
     }
+
+    if (options.issuer.metadataSigner !== undefined) {
+      assertSignerMode(options.issuer.metadataSigner, 'issuer.metadataSigner')
+    }
   }
 
   if (options.verifier) {
@@ -46,9 +50,15 @@ export function validateOpenId4VcOptions(options: OpenId4VcPluginOptions): void 
     assertNonEmptyString(options.verifier.displayName, 'verifier.displayName')
     assertSigningOptions(options.verifier.signing, 'verifier.signing')
     assertTrustOptions(options.trust, true)
+
+    if (options.verifier.requestSigner !== undefined) {
+      assertSignerMode(options.verifier.requestSigner, 'verifier.requestSigner')
+    }
   } else if (options.trust) {
     assertTrustOptions(options.trust, false)
   }
+
+  if (options.revocation) assertRevocationOptions(options.revocation)
 
   assertCredentialConfigurations(options.credentialConfigurations)
   assertVerifierPolicies(options.verifierPolicies, options.credentialConfigurations)
@@ -205,6 +215,22 @@ function assertTrustOptions(trust: OpenId4VcPluginOptions['trust'], requiresAnch
     throw new Error(
       'verifier trust requires credentialIssuerCertificates or developmentCertificateFingerprints',
     )
+  }
+}
+
+function assertSignerMode(value: unknown, field: string): void {
+  if (value !== 'x5c' && value !== 'did') {
+    throw new Error(`${field} must be 'x5c' or 'did'`)
+  }
+}
+
+function assertRevocationOptions(revocation: NonNullable<OpenId4VcPluginOptions['revocation']>): void {
+  if (typeof revocation.enabled !== 'boolean') {
+    throw new Error('revocation.enabled must be a boolean')
+  }
+
+  if (revocation.size !== undefined && (!Number.isInteger(revocation.size) || revocation.size <= 0)) {
+    throw new Error('revocation.size must be a positive integer')
   }
 }
 

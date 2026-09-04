@@ -278,6 +278,53 @@ describe('validateOpenId4VcOptions', () => {
 
     expect(() => validateOpenId4VcOptions(options)).toThrow('signing')
   })
+
+  it('accepts both signer modes on the issuer and the verifier', () => {
+    for (const mode of ['x5c', 'did'] as const) {
+      const options = validOptions()
+      options.issuer!.metadataSigner = mode
+      options.verifier!.requestSigner = mode
+
+      expect(() => validateOpenId4VcOptions(options)).not.toThrow()
+    }
+  })
+
+  it('rejects an issuer metadata signer that is neither x5c nor did', () => {
+    const options = validOptions()
+    options.issuer!.metadataSigner = 'jwk' as never
+
+    expect(() => validateOpenId4VcOptions(options)).toThrow("issuer.metadataSigner must be 'x5c' or 'did'")
+  })
+
+  it('rejects a verifier request signer that is neither x5c nor did', () => {
+    const options = validOptions()
+    options.verifier!.requestSigner = 'jwk' as never
+
+    expect(() => validateOpenId4VcOptions(options)).toThrow("verifier.requestSigner must be 'x5c' or 'did'")
+  })
+
+  it('accepts a revocation block with a boolean flag and a positive size', () => {
+    const options = validOptions()
+    options.revocation = { enabled: true, size: 1_024 }
+
+    expect(() => validateOpenId4VcOptions(options)).not.toThrow()
+  })
+
+  it('rejects a revocation flag that is not a boolean', () => {
+    const options = validOptions()
+    options.revocation = { enabled: 'true' as never }
+
+    expect(() => validateOpenId4VcOptions(options)).toThrow('revocation.enabled must be a boolean')
+  })
+
+  it('rejects a revocation size that is not a positive integer', () => {
+    for (const size of [0, -1, 1.5, Number.NaN, '1024' as never]) {
+      const options = validOptions()
+      options.revocation = { enabled: true, size }
+
+      expect(() => validateOpenId4VcOptions(options)).toThrow('revocation.size must be a positive integer')
+    }
+  })
 })
 
 function catchValidationError(options: OpenId4VcPluginOptions): Error {
