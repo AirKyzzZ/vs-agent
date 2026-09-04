@@ -1,5 +1,7 @@
 import 'reflect-metadata'
 
+import type { OpenId4VcPluginOptions } from '@verana-labs/vs-agent-plugin-openid4vc'
+
 import { parseDid, utils } from '@credo-ts/core'
 import { NestFactory } from '@nestjs/core'
 import { KdfMethod } from '@openwallet-foundation/askar-nodejs'
@@ -61,6 +63,7 @@ import {
   USE_CORS,
   USER_PROFILE_AUTODISCLOSE,
   MASTER_LIST_CSCA_LOCATION,
+  OID4VC_CONFIG_FILE,
   AGENT_AUTO_UPDATE_STORAGE_ON_STARTUP,
   VERANA_INDEXER_BASE_URL,
   VERANA_ACCOUNT_MNEMONIC,
@@ -75,7 +78,9 @@ import {
   AGENT_DELEGATED_PARENT_VS_DID,
   TRUSTED_ECS_ECOSYSTEM_DIDS,
 } from './config'
+import { readOpenId4VcOptions } from './config/openid4vc'
 import { MessagingPlugin, VtFlowNestPlugin } from './plugins'
+import { OpenId4VcNestPlugin } from './plugins/OpenId4VcNestPlugin'
 import { PublicModule } from './public.module'
 import { parseTrustedNetworks, restrictDocsToTrustedPeers } from './security'
 import {
@@ -275,6 +280,16 @@ const run = async () => {
   }
   const adminApiServiceEndpoint = ADMIN_API_AUTH_MODE === 'corporation' ? ADMIN_API_PUBLIC_URL : undefined
 
+  let openId4VcOptions: OpenId4VcPluginOptions | undefined
+  if (OID4VC_CONFIG_FILE) {
+    try {
+      openId4VcOptions = await readOpenId4VcOptions(OID4VC_CONFIG_FILE, publicApiBaseUrl)
+    } catch (error) {
+      serverLogger.error(`Invalid configuration:\n- ${(error as Error).message}`)
+      process.exit(1)
+    }
+  }
+
   // Dynamically load optional plugin packages.
   const optImport = (name: string): Promise<any> => import(name).catch(() => null)
   const [chatModule, mrtdModule] = await Promise.all([
@@ -298,6 +313,7 @@ const run = async () => {
     ...(ENABLED_PLUGINS.includes('messaging') ? [MessagingPlugin] : []),
     ...(chatModule ? [chatModule.ChatPlugin] : []),
     ...(mrtdModule ? [mrtdModule.MrtdPlugin({ masterListCscaLocation: MASTER_LIST_CSCA_LOCATION })] : []),
+    ...(openId4VcOptions ? [OpenId4VcNestPlugin(openId4VcOptions)] : []),
     VtFlowNestPlugin,
   ]
 
