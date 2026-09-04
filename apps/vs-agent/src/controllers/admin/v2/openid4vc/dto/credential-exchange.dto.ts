@@ -15,7 +15,8 @@ export class Openid4vcCredentialOfferBodyDto {
 
   @ApiProperty({
     type: Object,
-    description: 'Claim values of the offered credential, one entry for each claim the configuration lists',
+    description:
+      'Claim values of the offered credential. Any subset of the configured claims, at least one, each non-empty; an omitted claim is left out of the credential.',
     example: { name: 'Ada Lovelace', role: 'engineer' },
   })
   @IsObject()
